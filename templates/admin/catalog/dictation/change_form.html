@@ -1,0 +1,119 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{# AI to'ldirish banner — add va change ikkalasida ko'rinsin. #}
+{% block content %}
+  <div style="max-width: 1100px; margin: 0 0 20px 0;">
+    <div style="background: linear-gradient(135deg, #ECFDF5 0%, #E0F2FE 100%);
+                border: 1px solid #10B981;
+                border-radius: 12px;
+                padding: 20px 24px;
+                display: flex;
+                align-items: center;
+                gap: 20px;
+                flex-wrap: wrap;">
+      <div style="flex: 1; min-width: 240px;">
+        <div style="font-size: 15px; font-weight: 800; color: #065F46; margin-bottom: 4px;">
+          🤖 AI to'ldirish (OpenAI Whisper)
+        </div>
+        <div style="font-size: 13px; color: #047857; line-height: 1.5;">
+          {% if not dictation_obj %}
+            {# Add view #}
+            Sarlavha, audio yoki YouTube havolasini to'ldiring va pastdagi
+            <b>"Save &amp; AI to'ldirish"</b> tugmasini bosing —
+            Whisper avtomatik transkript oladi va sahifa yangilanadi.
+            (5s—20 daqiqa, 25 MB'gacha)
+          {% elif not dictation_obj.audio and not dictation_obj.youtube_link %}
+            Audio yoki YouTube havolasi yo'q. Quyidagi bo'limlardan bittasini
+            to'ldiring va saqlang.
+          {% elif dictation_obj.audio %}
+            Whisper avtomatik transkript qiladi — <b>body</b>, <b>full_text</b> va
+            <b>words_json</b> maydonlari to'ldiriladi.
+            (5s—20 daqiqa oralig'ida, 25 MB'gacha)
+          {% else %}
+            YouTube havolasi berilgan — audio <b>yt-dlp bilan vaqtinchalik</b>
+            yuklanadi va transkriptdan keyin o'chiriladi. Faqat matn saqlanadi.
+            (5s—20 daqiqa oralig'ida)
+          {% endif %}
+        </div>
+
+        {% if dictation_obj %}
+          {% if dictation_obj.transcription_status == "processing" %}
+            <div style="margin-top: 10px; color: #F59E0B; font-size: 13px; font-weight: 700;">
+              ⏳ Ishlanmoqda...
+            </div>
+          {% elif dictation_obj.transcription_status == "done" %}
+            <div style="margin-top: 10px; color: #059669; font-size: 13px; font-weight: 700;">
+              ✓ Tayyor — {{ dictation_obj.chunks_count }} ta chunk,
+              {{ dictation_obj.words_json|length }} ta so'z
+            </div>
+          {% elif dictation_obj.transcription_status == "failed" and dictation_obj.transcription_error %}
+            <div style="margin-top: 10px; color: #B91C1C; font-size: 13px; font-weight: 600;
+                        background: #FEF2F2; border: 1px solid #FCA5A5;
+                        border-radius: 8px; padding: 10px 12px;">
+              <b>⚠ Oxirgi xato:</b> {{ dictation_obj.transcription_error }}
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        {% if dictation_obj %}
+          {% if dictation_obj.audio or dictation_obj.youtube_link %}
+            <form method="post" action="{{ ai_transcribe_url }}" style="margin: 0;">
+              {% csrf_token %}
+              <button type="submit"
+                onclick="this.disabled=true; this.innerText='⏳ Ishlanmoqda (uzoq audio uchun bir necha daqiqa)...'; this.form.submit();"
+                style="background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+                       color: #FFF; border: none; border-radius: 10px;
+                       padding: 12px 22px; font-size: 14px; font-weight: 700;
+                       cursor: pointer; box-shadow: 0 4px 12px rgba(16,185,129,.3);">
+                🤖 AI to'ldirish
+              </button>
+            </form>
+          {% endif %}
+          {% if dictation_obj.audio %}
+            <a href="{{ segment_editor_url }}"
+              style="background: #8B5CF6; color: #FFF; border-radius: 10px;
+                     padding: 12px 22px; font-size: 14px; font-weight: 700;
+                     text-decoration: none; display: inline-block;">
+              🎬 Segment editor
+            </a>
+          {% endif %}
+        {% else %}
+          {# Add view — tugma yo'q, Save & AI submit_row'da #}
+          <div style="color: #059669; font-size: 12px; font-weight: 700;
+                      background: #FFF; border: 1px dashed #10B981;
+                      border-radius: 8px; padding: 10px 14px;">
+            ↓ pastda <b>Save &amp; AI to'ldirish</b>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {{ block.super }}
+{% endblock %}
+
+{# Add view submit_row'ga "Save & AI to'ldirish" tugmasi qo'shamiz. #}
+{% block submit_buttons_bottom %}
+  <div class="submit-row">
+    {% if not dictation_obj %}
+      {# Add view — asosiy "Save & AI" yashil tugma birinchi. #}
+      <input type="submit" value="🤖 Save &amp; AI to'ldirish" name="_save_ai"
+        style="background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+               color: #FFF; border: none; border-radius: 6px;
+               padding: 10px 18px; font-size: 13px; font-weight: 700;
+               cursor: pointer; margin-right: 8px;">
+    {% endif %}
+    {% if show_save %}<input type="submit" value="{% translate 'Save' %}" class="default" name="_save">{% endif %}
+    {% if show_delete_link and original %}
+      {% url opts|admin_urlname:'delete' original.pk|admin_urlquote as delete_url %}
+      <p class="deletelink-box"><a href="{% add_preserved_filters delete_url %}" class="deletelink">{% translate "Delete" %}</a></p>
+    {% endif %}
+    {% if show_save_as_new %}<input type="submit" value="{% translate 'Save as new' %}" name="_saveasnew">{% endif %}
+    {% if show_save_and_add_another %}<input type="submit" value="{% translate 'Save and add another' %}" name="_addanother">{% endif %}
+    {% if show_save_and_continue %}<input type="submit" value="{% if can_change %}{% translate 'Save and continue editing' %}{% else %}{% translate 'Save and view' %}{% endif %}" name="_continue">{% endif %}
+    {% if show_close %}{% url opts|admin_urlname:'changelist' as changelist_url %}<a href="{% add_preserved_filters changelist_url %}" class="closelink">{% translate 'Close' %}</a>{% endif %}
+  </div>
+{% endblock %}

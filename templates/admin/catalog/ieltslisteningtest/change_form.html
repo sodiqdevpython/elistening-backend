@@ -1,0 +1,100 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{# Javob variantlari widget'i uchun global JS: event delegation orqali
+   `+ variant qo'shish` yangi maydon qo'shadi, `×` o'chiradi. #}
+{% block extrahead %}{{ block.super }}
+<script>
+document.addEventListener('click', function(e) {
+  const del = e.target.closest('.ielts-ans-del');
+  if (del) {
+    e.preventDefault();
+    const row = del.closest('.ielts-ans-row');
+    const parent = row && row.parentNode;
+    if (row && parent) {
+      // Kamida bitta maydon qolsin — hammasi o'chirilmasin (bo'shatilsin)
+      const remaining = parent.querySelectorAll('.ielts-ans-row').length;
+      if (remaining > 1) {
+        row.remove();
+      } else {
+        const inp = row.querySelector('input');
+        if (inp) inp.value = '';
+      }
+    }
+    return;
+  }
+  const add = e.target.closest('.ielts-ans-add');
+  if (add) {
+    e.preventDefault();
+    const name = add.dataset.name;
+    const container = add.parentNode;
+    const row = document.createElement('div');
+    row.className = 'ielts-ans-row';
+    row.style.cssText = 'display:flex;gap:6px;margin-bottom:4px;';
+    row.innerHTML =
+      '<input type="text" name="' + name + '" value="" '
+      + 'style="flex:1;padding:5px 9px;font-family:\'Menlo\',\'Consolas\',monospace;'
+      + 'border:1px solid #b8bfcb;border-radius:4px;font-size:13px;" '
+      + 'placeholder="javob varianti">'
+      + '<button type="button" class="ielts-ans-del" '
+      + 'style="width:30px;background:#FEE2E2;border:1px solid #FCA5A5;'
+      + 'color:#991B1B;border-radius:4px;cursor:pointer;font-weight:800;'
+      + 'font-size:14px;">×</button>';
+    container.insertBefore(row, add);
+    const inp = row.querySelector('input');
+    if (inp) inp.focus();
+  }
+});
+</script>
+{% endblock %}
+
+{# Banner form ustida chiqadi — content blokini o'zi urinmasdan alohida
+   `content_subtitle` blokini kengaytiramiz. Aks holda `{{ block.super }}`
+   ichidagi admin form HTML escape bo'lib literal matn ko'rinar edi. #}
+{% block content_subtitle %}
+  {{ block.super }}
+  {% if ielts_obj %}
+    <div style="max-width: 1100px; margin: 0 0 16px 0;">
+      {% if ielts_obj.status == "pending" or ielts_obj.status == "parsing" %}
+        <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:12px;padding:16px 20px;">
+          <div style="font-weight:800;color:#92400E;margin-bottom:4px;">⏳ Parser ishlamoqda…</div>
+          <div style="font-size:13px;color:#78350F;">
+            engnovate.com sahifasi yuklanmoqda va savollar ajratilmoqda. Bir necha soniya kutib
+            sahifani <b>yangilang</b> — status <code>parsed</code> bo'lgach javob maydonlari to'g'ri
+            sonda chiqadi.
+          </div>
+        </div>
+      {% elif ielts_obj.status == "failed" %}
+        <div style="background:#FEF2F2;border:1px solid #EF4444;border-radius:12px;padding:16px 20px;">
+          <div style="font-weight:800;color:#991B1B;margin-bottom:6px;">⚠ Parser xatoligi</div>
+          <div style="font-size:13px;color:#7F1D1D;font-family:'Menlo',monospace;white-space:pre-wrap;">
+            {{ ielts_obj.parse_error }}
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:#7F1D1D;">
+            URL to'g'riligini tekshirib "↻ Qayta parse" bulk amalidan foydalaning.
+          </div>
+        </div>
+      {% elif ielts_obj.status == "parsed" %}
+        <div style="background:#EFF6FF;border:1px solid #2563EB;border-radius:12px;padding:16px 20px;">
+          <div style="font-weight:800;color:#1E3A8A;margin-bottom:4px;">
+            📝 Parser tayyor — endi javoblarni yozing
+          </div>
+          <div style="font-size:13px;color:#1E40AF;">
+            {{ ielts_obj.total_questions }} ta savol topildi.
+            <b>{{ ielts_obj.answered_count }} / {{ ielts_obj.total_questions }}</b>
+            javob yozildi. Barcha savolga javob yozilgach status
+            avtomatik <code>ready</code> bo'ladi va <b>is_published</b> ni yoqishingiz mumkin.
+          </div>
+        </div>
+      {% elif ielts_obj.status == "ready" %}
+        <div style="background:#ECFDF5;border:1px solid #10B981;border-radius:12px;padding:16px 20px;">
+          <div style="font-weight:800;color:#065F46;margin-bottom:4px;">✓ Test tayyor</div>
+          <div style="font-size:13px;color:#047857;">
+            Barcha {{ ielts_obj.total_questions }} savolga javob yozilgan. Sayt'da
+            ko'rinishi uchun <b>is_published</b> ni yoqing va saqlang.
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

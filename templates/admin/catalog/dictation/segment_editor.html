@@ -1,0 +1,452 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Segment editor — {{ dictation.title }}{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  /* Sahifa layout */
+  .editor-wrap { max-width: 1200px; margin: 20px auto; padding: 0 16px; }
+  .editor-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .editor-header h1 { margin: 0; font-size: 20px; }
+  .editor-header small { color: #64748B; }
+
+  .toolbar {
+    background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .toolbar-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .toolbar-row + .toolbar-row { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #CBD5E1; }
+
+  .btn {
+    padding: 8px 14px; border: none; border-radius: 8px; cursor: pointer;
+    font-weight: 700; font-size: 13px; display: inline-flex;
+    align-items: center; gap: 6px;
+  }
+  .btn-play    { background: #10B981; color: #FFF; }
+  .btn-pause   { background: #F59E0B; color: #FFF; }
+  .btn-add     { background: #2563EB; color: #FFF; }
+  .btn-save    { background: #059669; color: #FFF; padding: 10px 20px; font-size: 14px; }
+  .btn-ghost   { background: #FFF; color: #0F172A; border: 1px solid #E2E8F0; }
+  .btn:hover   { filter: brightness(1.08); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  #waveform {
+    background: #F1F5F9; border-radius: 8px; padding: 8px;
+    min-height: 128px;
+  }
+  .time-display {
+    font-family: 'SF Mono', 'Consolas', monospace; font-size: 14px;
+    font-weight: 700; color: #0F172A; min-width: 130px; text-align: right;
+  }
+
+  /* Segmentlar ro'yxati */
+  .segments-list { margin-top: 20px; }
+  .segments-list h3 { margin: 0 0 10px; font-size: 16px; }
+  .segment-row {
+    display: grid;
+    grid-template-columns: 44px 140px 1fr 120px auto;
+    gap: 10px; align-items: center;
+    padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 10px;
+    background: #FFF; margin-bottom: 8px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .segment-row.active {
+    border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+  }
+  .segment-row .num {
+    background: #EFF6FF; color: #2563EB; font-weight: 700; font-size: 13px;
+    padding: 4px 8px; border-radius: 8px; text-align: center;
+  }
+  .segment-row .time {
+    font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px;
+    color: #475569;
+  }
+  .segment-row input[type=text] {
+    padding: 8px 10px; border: 1px solid #CBD5E1; border-radius: 8px;
+    font-size: 14px; width: 100%; box-sizing: border-box;
+  }
+  .segment-row input[type=text]:focus {
+    outline: none; border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+  }
+  .segment-row .actions { display: flex; gap: 4px; }
+  .icon-btn {
+    background: transparent; border: 1px solid #E2E8F0; border-radius: 6px;
+    width: 28px; height: 28px; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: #F1F5F9; }
+  .icon-btn.danger { color: #EF4444; }
+  .icon-btn.danger:hover { background: #FEE2E2; border-color: #FCA5A5; }
+
+  .empty-hint {
+    padding: 24px; text-align: center; color: #64748B; font-size: 14px;
+    background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 10px;
+  }
+
+  .shortcuts {
+    margin-top: 16px; padding: 12px 16px;
+    background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 10px;
+    font-size: 12.5px; color: #7C2D12;
+  }
+  .shortcuts b { color: #431407; }
+  .shortcuts kbd {
+    background: #FFF; border: 1px solid #FCD34D; border-radius: 4px;
+    padding: 1px 6px; font-family: 'SF Mono', monospace; font-size: 11px;
+  }
+
+  .status-msg {
+    padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 700;
+    margin-top: 12px;
+  }
+  .status-msg.ok  { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
+  .status-msg.err { background: #FEF2F2; color: #DC2626; border: 1px solid #FCA5A5; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-wrap">
+
+  <div class="editor-header">
+    <div>
+      <h1>🎬 Segment editor</h1>
+      <small>
+        <b>{{ dictation.title }}</b>
+        · {{ dictation.get_type_display }}
+        · {{ dictation.cefr_level }}
+        {% if dictation.is_media %} · 📹 media{% endif %}
+      </small>
+    </div>
+    <div>
+      <a href="{{ back_url }}" class="btn btn-ghost">
+        ← Admin'ga qaytish
+      </a>
+    </div>
+  </div>
+
+  {% if not audio_url %}
+    <div class="empty-hint">
+      Audio biriktirilmagan. Avval admin panelida <b>audio_file</b> ni yuklang.
+    </div>
+  {% else %}
+
+    <div class="toolbar">
+      <div class="toolbar-row">
+        <button class="btn btn-play" id="playBtn">▶ Play</button>
+        <button class="btn btn-add" id="addBtn">+ Yangi segment</button>
+        <div style="flex:1"></div>
+        <select id="speedSelect" title="Ijro tezligi" style="padding:6px 10px;border-radius:6px;border:1px solid #E2E8F0;font-weight:700">
+          <option value="0.5">0.5x</option>
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+        </select>
+        <div class="time-display" id="timeDisplay">0:00.000 / 0:00.000</div>
+      </div>
+
+      <div id="waveform" style="margin-top:12px"></div>
+    </div>
+
+    <div class="segments-list">
+      <h3>Segmentlar (<span id="segCount">0</span>)</h3>
+      <div id="segmentsContainer"></div>
+      <div id="emptyHint" class="empty-hint" style="display:none">
+        Hali segment yo'q. <b>+ Yangi segment</b> tugmasini bosing yoki <kbd>Ctrl</kbd>+<kbd>M</kbd>.
+      </div>
+    </div>
+
+    <div style="margin-top:24px;display:flex;gap:10px;align-items:center">
+      <button class="btn btn-save" id="saveBtn">💾 Saqlash (Ctrl+S)</button>
+      <span id="statusMsg" style="color:#64748B;font-size:13px"></span>
+    </div>
+
+    <div class="shortcuts">
+      <b>Klaviatura yorliqlari:</b>
+      <kbd>Space</kbd> — play/pause ·
+      <kbd>Ctrl</kbd>+<kbd>M</kbd> — hozirgi vaqtdan yangi segment ·
+      <kbd>Ctrl</kbd>+<kbd>Enter</kbd> — hozirgi segmentni tugatib (end_ms), yangi segmentga o'tish ·
+      <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> — segmentlar orasida navigatsiya ·
+      <kbd>Ctrl</kbd>+<kbd>S</kbd> — saqlash ·
+      <kbd>Delete</kbd> — faol segmentni o'chirish
+    </div>
+
+  {% endif %}
+
+</div>
+
+{% if audio_url %}
+<script src="https://unpkg.com/wavesurfer.js@7.8.5/dist/wavesurfer.min.js"></script>
+<script src="https://unpkg.com/wavesurfer.js@7.8.5/dist/plugins/regions.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  const AUDIO_URL = {{ audio_url|safe|escapejs|stringformat:"'%s'" }};
+  const INITIAL_SEGMENTS = {{ segments_json|safe }};
+  const SAVE_URL = {{ request.path|escapejs|stringformat:"'%s'"|add:"'save/'" }};
+  const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+             || document.cookie.match(/csrftoken=([^;]+)/)?.[1];
+
+  // --- WaveSurfer setup ---------------------------------------------------
+  const ws = WaveSurfer.create({
+    container: '#waveform',
+    waveColor: '#94A3B8',
+    progressColor: '#2563EB',
+    cursorColor: '#EF4444',
+    cursorWidth: 2,
+    height: 128,
+    barWidth: 2,
+    barGap: 1,
+    barRadius: 2,
+    url: AUDIO_URL,
+  });
+  const regionsPlugin = ws.registerPlugin(WaveSurfer.Regions.create());
+
+  // Duration displayed once loaded.
+  let duration = 0;
+  ws.on('ready', () => {
+    duration = ws.getDuration();
+    updateTimeDisplay();
+    // Load initial regions from server.
+    INITIAL_SEGMENTS.forEach((seg, i) => addRegion(seg.start_ms / 1000, seg.end_ms / 1000, seg.text, seg.id));
+    renderList();
+  });
+
+  ws.on('timeupdate', updateTimeDisplay);
+  ws.on('play', () => { playBtn.classList.replace('btn-play', 'btn-pause'); playBtn.textContent = '⏸ Pause'; });
+  ws.on('pause', () => { playBtn.classList.replace('btn-pause', 'btn-play'); playBtn.textContent = '▶ Play'; });
+
+  // --- Local segment state ------------------------------------------------
+  // Har region uchun matn alohida saqlanadi (wavesurfer.js content'da o'zi bor,
+  // lekin biz kontrolni JS'da olib boramiz — soddaroq bo'ladi).
+  const segments = new Map();  // region.id -> {region, text}
+  let activeId = null;
+
+  function addRegion(start, end, text = '', existingId = null) {
+    const region = regionsPlugin.addRegion({
+      start, end,
+      color: 'rgba(37, 99, 235, 0.22)',
+      drag: true, resize: true,
+    });
+    segments.set(region.id, { region, text: text || '', originalId: existingId });
+    region.on('click', () => setActive(region.id));
+    region.on('update-end', () => renderList());   // matn maydonini yangilash uchun
+    return region;
+  }
+
+  function setActive(id) {
+    activeId = id;
+    for (const [regionId, info] of segments) {
+      info.region.setOptions({
+        color: regionId === id ? 'rgba(16, 185, 129, 0.28)' : 'rgba(37, 99, 235, 0.22)',
+      });
+    }
+    // Row'ni ham active belgilaymiz + fokus.
+    document.querySelectorAll('.segment-row').forEach((row) => {
+      row.classList.toggle('active', row.dataset.id === id);
+    });
+    const input = document.querySelector(`.segment-row[data-id="${id}"] input`);
+    if (input) input.focus();
+  }
+
+  function removeRegion(id) {
+    const info = segments.get(id);
+    if (!info) return;
+    info.region.remove();
+    segments.delete(id);
+    if (activeId === id) activeId = null;
+    renderList();
+  }
+
+  // --- List rendering -----------------------------------------------------
+  const container = document.getElementById('segmentsContainer');
+  const emptyHint = document.getElementById('emptyHint');
+  const segCount = document.getElementById('segCount');
+
+  function renderList() {
+    const sorted = [...segments.entries()].sort((a, b) => a[1].region.start - b[1].region.start);
+    segCount.textContent = sorted.length;
+    emptyHint.style.display = sorted.length ? 'none' : 'block';
+    container.innerHTML = '';
+
+    sorted.forEach(([id, info], index) => {
+      const row = document.createElement('div');
+      row.className = 'segment-row' + (id === activeId ? ' active' : '');
+      row.dataset.id = id;
+
+      row.innerHTML = `
+        <div class="num">#${index + 1}</div>
+        <div class="time">
+          ${formatTime(info.region.start)}<br>
+          <span style="opacity:.6">→ ${formatTime(info.region.end)}</span>
+        </div>
+        <input type="text" placeholder="Nima deyilgan?"
+               value="${escapeHtml(info.text)}" data-id="${id}">
+        <div class="actions">
+          <button class="icon-btn" title="Ushbu segmentni o'ynatish" data-play="${id}">▶</button>
+          <button class="icon-btn" title="End vaqtini hozirgi joyga qo'yish" data-setend="${id}">⇥</button>
+          <button class="icon-btn danger" title="O'chirish" data-del="${id}">🗑</button>
+        </div>
+      `;
+      container.appendChild(row);
+
+      const input = row.querySelector('input');
+      input.addEventListener('input', () => { info.text = input.value; });
+      input.addEventListener('focus', () => setActive(id));
+      input.addEventListener('keydown', (e) => onInputKeyDown(e, id));
+
+      row.querySelector('[data-play]').addEventListener('click', () => playRegion(id));
+      row.querySelector('[data-setend]').addEventListener('click', () => {
+        info.region.setOptions({ end: ws.getCurrentTime() });
+        renderList();
+      });
+      row.querySelector('[data-del]').addEventListener('click', () => {
+        if (confirm('Segmentni o\\'chirishga ishonchingiz komilmi?')) removeRegion(id);
+      });
+    });
+  }
+
+  function playRegion(id) {
+    const info = segments.get(id);
+    if (!info) return;
+    ws.setTime(info.region.start);
+    ws.play();
+    // Region oxirida to'xtatish
+    const stopAt = info.region.end;
+    const check = () => {
+      if (ws.getCurrentTime() >= stopAt) {
+        ws.pause();
+        ws.un('timeupdate', check);
+      }
+    };
+    ws.on('timeupdate', check);
+    setActive(id);
+  }
+
+  // --- Actions ------------------------------------------------------------
+  const playBtn = document.getElementById('playBtn');
+  const addBtn = document.getElementById('addBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const statusMsg = document.getElementById('statusMsg');
+  const timeDisplay = document.getElementById('timeDisplay');
+  const speedSelect = document.getElementById('speedSelect');
+
+  playBtn.addEventListener('click', () => ws.playPause());
+  addBtn.addEventListener('click', () => addAtCurrentTime());
+  saveBtn.addEventListener('click', () => save());
+  speedSelect.addEventListener('change', () => ws.setPlaybackRate(parseFloat(speedSelect.value)));
+
+  function addAtCurrentTime() {
+    const start = ws.getCurrentTime();
+    const end = Math.min(duration, start + 2.5);  // default 2.5s
+    const region = addRegion(start, end, '');
+    setActive(region.id);
+    renderList();
+  }
+
+  function updateTimeDisplay() {
+    timeDisplay.textContent = `${formatTime(ws.getCurrentTime())} / ${formatTime(duration)}`;
+  }
+
+  async function save() {
+    const payload = [...segments.values()].map((info) => ({
+      start_ms: Math.round(info.region.start * 1000),
+      end_ms: Math.round(info.region.end * 1000),
+      text: info.text.trim(),
+    }));
+    statusMsg.className = 'status-msg';
+    statusMsg.textContent = 'Saqlanmoqda...';
+    try {
+      const r = await fetch(SAVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        credentials: 'same-origin',
+        body: JSON.stringify({ segments: payload }),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'Server xato qaytardi');
+      statusMsg.className = 'status-msg ok';
+      statusMsg.textContent = `✓ ${data.message}`;
+      // 3 soniyadan keyin xabarni yashiramiz.
+      setTimeout(() => { statusMsg.textContent = ''; statusMsg.className = ''; }, 3000);
+    } catch (e) {
+      statusMsg.className = 'status-msg err';
+      statusMsg.textContent = '✗ ' + e.message;
+    }
+  }
+
+  // --- Keyboard shortcuts -------------------------------------------------
+  document.addEventListener('keydown', (e) => {
+    const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+    // Ctrl+S — hamma joyda saqlash
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault(); save(); return;
+    }
+    // Ctrl+M — yangi segment
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'm') {
+      e.preventDefault(); addAtCurrentTime(); return;
+    }
+    // Space — play/pause (agar input'da bo'lmasak)
+    if (e.code === 'Space' && !inInput) {
+      e.preventDefault(); ws.playPause(); return;
+    }
+    // Alt+↑/↓ — segmentlar orasida
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const ids = [...segments.entries()]
+        .sort((a, b) => a[1].region.start - b[1].region.start).map(([id]) => id);
+      if (ids.length === 0) return;
+      const cur = activeId ? ids.indexOf(activeId) : -1;
+      const next = e.key === 'ArrowDown'
+        ? Math.min(ids.length - 1, cur + 1)
+        : Math.max(0, cur - 1);
+      setActive(ids[next]);
+      return;
+    }
+    // Delete — faol segmentni o'chirish (faqat input'da bo'lmagan holda)
+    if (e.key === 'Delete' && !inInput && activeId) {
+      e.preventDefault();
+      if (confirm('Faol segmentni o\\'chirasizmi?')) removeRegion(activeId);
+      return;
+    }
+  });
+
+  function onInputKeyDown(e, id) {
+    // Ctrl+Enter — hozirgi segmentga end_ms=currentTime va yangi segment
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      const info = segments.get(id);
+      if (info) {
+        info.region.setOptions({ end: ws.getCurrentTime() });
+        renderList();
+      }
+      // Yangi segment shu vaqtdan boshlanadi
+      addAtCurrentTime();
+    }
+  }
+
+  // --- Utilities ----------------------------------------------------------
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds)) return '0:00.000';
+    const s = Math.max(0, seconds);
+    const m = Math.floor(s / 60);
+    const rest = s - m * 60;
+    return `${m}:${rest.toFixed(3).padStart(6, '0')}`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+})();
+</script>
+{# CSRF token faqat CSRF cookie'dan ololmaganda kerak — Django admin har doim cookie o'rnatadi #}
+<form style="display:none">{% csrf_token %}</form>
+{% endif %}
+{% endblock %}

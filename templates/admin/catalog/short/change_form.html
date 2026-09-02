@@ -1,0 +1,72 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{# AI to'ldirish banner — add va change ikkalasida ko'rinsin. #}
+{% block content %}
+  <div style="max-width: 1100px; margin: 0 0 20px 0;">
+    <div style="background: linear-gradient(135deg, #ECFDF5 0%, #E0F2FE 100%);
+                border: 1px solid #10B981;
+                border-radius: 12px;
+                padding: 20px 24px;
+                display: flex;
+                align-items: center;
+                gap: 20px;
+                flex-wrap: wrap;">
+      <div style="flex: 1; min-width: 240px;">
+        <div style="font-size: 15px; font-weight: 800; color: #065F46; margin-bottom: 4px;">
+          🤖 AI to'ldirish (Whisper + Claude Haiku)
+        </div>
+        <div style="font-size: 13px; color: #047857; line-height: 1.5;">
+          {% if not short_obj %}
+            YouTube Shorts URL'ni yozing va saqlang — pastda yashil tugma paydo bo'ladi.
+            AI 30-90 s ichida transkript, CEFR daraja, 10 teg, 2 MCQ va 2 TFNG
+            (True / False / Not given) savol yaratadi.
+          {% elif not short_obj.youtube_link %}
+            YouTube havolasi yo'q. Yuqoridan qo'shing va saqlang.
+          {% else %}
+            AI to'ldiruvchi Whisper bilan transkript, Claude Haiku bilan savollar
+            yaratadi. Audio saqlanmaydi — <b>yt-dlp bilan vaqtinchalik</b> yuklanadi.
+          {% endif %}
+        </div>
+
+        {% if short_obj %}
+          {% if short_obj.transcription_status == "processing" %}
+            <div style="margin-top: 10px; color: #F59E0B; font-size: 13px; font-weight: 700;">
+              ⏳ Ishlanmoqda...
+            </div>
+          {% elif short_obj.transcription_status == "done" %}
+            <div style="margin-top: 10px; color: #059669; font-size: 13px; font-weight: 700;">
+              ✓ Tayyor — {{ short_obj.mcq_questions|length }} MCQ,
+              {{ short_obj.tfng_questions|length }} TFNG,
+              CEFR {{ short_obj.cefr_from }}–{{ short_obj.cefr_to }}
+            </div>
+          {% elif short_obj.transcription_status == "failed" and short_obj.transcription_error %}
+            <div style="margin-top: 10px; color: #B91C1C; font-size: 13px; font-weight: 600;
+                        background: #FEF2F2; border: 1px solid #FCA5A5;
+                        border-radius: 8px; padding: 10px 12px;">
+              <b>⚠ Oxirgi xato:</b> {{ short_obj.transcription_error }}
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        {% if short_obj and short_obj.youtube_link %}
+          <form method="post" action="{{ ai_generate_url }}" style="margin: 0;">
+            {% csrf_token %}
+            <button type="submit"
+              onclick="this.disabled=true; this.innerText='⏳ Ishlanmoqda (30-90 s)...'; this.form.submit();"
+              style="background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+                     color: #FFF; border: none; border-radius: 10px;
+                     padding: 12px 22px; font-size: 14px; font-weight: 700;
+                     cursor: pointer; box-shadow: 0 4px 12px rgba(16,185,129,.3);">
+              🤖 AI to'ldirish
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {{ block.super }}
+{% endblock %}

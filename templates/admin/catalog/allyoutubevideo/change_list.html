@@ -1,0 +1,133 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Bosh</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=app_label %}">Katalog</a>
+    &rsaquo; {{ title }}
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main">
+    <div style="background:#F9FAFB;border:1px solid var(--border-color);border-radius:10px;
+                padding:14px 18px;margin-bottom:14px;">
+      <div style="font-size:13px;color:#4B5563;line-height:1.5;">
+        <b>{{ total }}</b> ta YouTube havolasi bor video topildi (Short + Diktant). Nomi,
+        YouTube ID yoki URL bo'yicha qidiring. <b>Turini o'zgartirish</b> uchun
+        chap ustundagi kartadan foydalanuvchining o'z change formasiga o'ting
+        (Short → <code>content_type</code>, Diktant → <code>type</code>).
+        Model orasida (Diktant → Short) o'tkazish maxsus jarayon talab qiladi —
+        bu yerda faqat qidirib ko'rish uchun.
+      </div>
+    </div>
+
+    <form method="get" style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;
+                                align-items:center;">
+      <input type="text" name="q" value="{{ q }}"
+             placeholder="Sarlavha, YouTube ID yoki URL..."
+             style="flex:1;min-width:240px;padding:8px 12px;font-size:14px;
+                    border:1px solid var(--border-color);border-radius:6px;">
+      <select name="kind" style="padding:8px 10px;font-size:14px;
+                                  border:1px solid var(--border-color);border-radius:6px;">
+        <option value="">Ikkalasi (Short + Diktant)</option>
+        <option value="short" {% if kind_filter == "short" %}selected{% endif %}>Faqat Short</option>
+        <option value="dictation" {% if kind_filter == "dictation" %}selected{% endif %}>Faqat Diktant</option>
+      </select>
+      <button type="submit" class="default" style="padding:8px 16px;">Qidirish</button>
+      {% if q or kind_filter %}
+        <a href="?" style="padding:8px 12px;color:#6B7280;text-decoration:none;">✕ Tozalash</a>
+      {% endif %}
+    </form>
+
+    <div class="results">
+      <table id="result_list" style="width:100%;">
+        <thead>
+          <tr>
+            <th style="width:80px;">Model</th>
+            <th>Sarlavha</th>
+            <th style="width:120px;">YouTube ID</th>
+            <th style="width:150px;">Turi</th>
+            <th style="width:80px;text-align:right;">Ko'rish</th>
+            <th style="width:100px;">Chop etilgan</th>
+            <th style="width:140px;">Sana</th>
+            <th style="width:100px;">Amal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for it in items %}
+            <tr>
+              <td>
+                <span style="display:inline-block;padding:3px 8px;border-radius:4px;
+                             font-size:11px;font-weight:700;
+                             background:{% if it.kind_key == 'short' %}#DBEAFE;color:#1E3A8A{% else %}#FEF3C7;color:#92400E{% endif %};">
+                  {{ it.kind_label }}
+                </span>
+              </td>
+              <td>
+                <a href="{{ it.change_url }}" style="font-weight:600;color:#2563EB;">
+                  {{ it.title|truncatechars:80 }}
+                </a>
+                {% if it.youtube_link %}
+                  <br>
+                  <a href="{{ it.youtube_link }}" target="_blank" rel="noreferrer"
+                     style="font-size:11px;color:#94A3B8;">
+                    {{ it.youtube_link|truncatechars:70 }}
+                  </a>
+                {% endif %}
+              </td>
+              <td style="font-family:monospace;font-size:12px;color:#6B7280;">
+                {{ it.youtube_id|default:"—" }}
+              </td>
+              <td style="font-size:13px;">{{ it.type_label }}</td>
+              <td style="text-align:right;font-size:12px;color:#6B7280;">
+                {{ it.views }}
+              </td>
+              <td>
+                {% if it.is_published %}
+                  <span style="color:#059669;font-weight:700;">✓ Ha</span>
+                {% else %}
+                  <span style="color:#94A3B8;">✕ Yo'q</span>
+                {% endif %}
+              </td>
+              <td style="font-size:12px;color:#6B7280;">
+                {{ it.created_at|date:"Y-m-d H:i" }}
+              </td>
+              <td>
+                <a href="{{ it.change_url }}"
+                   style="background:#2563EB;color:#fff;padding:5px 10px;border-radius:5px;
+                          font-size:12px;font-weight:700;text-decoration:none;">
+                  Ochish
+                </a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="8" style="text-align:center;padding:40px;color:#6B7280;">
+                {% if q %}
+                  <b>"{{ q }}"</b> bo'yicha hech narsa topilmadi.
+                {% else %}
+                  YouTube havolasi bor hech qanday video yo'q.
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if total_pages > 1 %}
+      <div class="paginator" style="margin-top:16px;">
+        {% if has_prev %}
+          <a href="?p={{ page|add:-1 }}{% if q %}&q={{ q }}{% endif %}{% if kind_filter %}&kind={{ kind_filter }}{% endif %}">« Oldingi</a>
+        {% endif %}
+        <span style="margin:0 12px;">Sahifa {{ page }} / {{ total_pages }}</span>
+        {% if has_next %}
+          <a href="?p={{ page|add:1 }}{% if q %}&q={{ q }}{% endif %}{% if kind_filter %}&kind={{ kind_filter }}{% endif %}">Keyingi »</a>
+        {% endif %}
+        <span style="color:#6B7280;margin-left:16px;">Jami: {{ total }}</span>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}
