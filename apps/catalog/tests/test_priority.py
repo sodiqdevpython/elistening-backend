@@ -4,8 +4,11 @@ Foydalanuvchi shikoyati: priority'si baland video har kirganda yana birinchi
 chiqib, o'chirilmaguncha o'sha yerda turardi. To'g'ri xulq: u ko'rilmaguncha
 oldinda, ko'rilgach esa oddiy videolar qatoriga qo'shiladi.
 """
+from datetime import timedelta
+
 from django.core.cache import cache
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.auth import build_tokens
@@ -37,6 +40,16 @@ class PriorityTests(TestCase):
         )
         self.hot = make_short(1, priority=9)
         self.others = [make_short(i) for i in range(2, 8)]
+        # `created_at` — `auto_now_add`, ya'ni hammasi bir necha mikrosoniya
+        # ichida yaratiladi va ba'zi bazalarda (sqlite) AYNAN teng chiqadi.
+        # "Eng yangisi birinchi" testi teng qiymatlarda ma'nosiz bo'lardi,
+        # shu bois vaqtlarni ataylab ajratamiz: `hot` — eng eskisi.
+        base = timezone.now() - timedelta(days=1)
+        Short.objects.filter(pk=self.hot.pk).update(created_at=base)
+        for i, obj in enumerate(self.others, start=1):
+            Short.objects.filter(pk=obj.pk).update(
+                created_at=base + timedelta(minutes=i),
+            )
 
         self.user = User.objects.create(username="u1", telegram_id=1, display_name="U")
         self.client = APIClient()

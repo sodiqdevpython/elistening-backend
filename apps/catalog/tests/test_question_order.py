@@ -1,13 +1,25 @@
 """Savollar ketma-ketligi testlari.
 
-Claude promptda "isbot vaqti bo'yicha o'sish tartibida ber" deb so'ralgan,
-lekin LLM buni har doim ham bajarmaydi. Shu bois server AI natijasini
-majburan saralaydi (`shorts_pipeline._order_quiz`) — IELTS'dagidek 1-savolning
-javobi eng oldin, 2-niki keyinroq eshitiladi.
+Claude promptda ketma-ketlik qat'iy talab qilingan (`ai/prompt_shorts.txt`,
+5-qoida), lekin LLM buni har doim bajarmaydi. Shu bois server ikki bosqichda
+majburlaydi (`shorts_pipeline._order_quiz`):
+
+1. har ro'yxat isbot vaqti bo'yicha saralanadi;
+2. butun ro'yxat bo'ylab xronologik `number` qo'yiladi — IELTS'dagidek
+   1-savolning javobi eng oldin, 2-niki keyinroq eshitiladi.
+
+Ikkinchi bosqich foydalanuvchi shikoyatidan keyin qo'shildi: *"oldin 3, 1,
+2, 4 shu tartibda javob kelayabdi"* — MCQ videoni boshdan-oxir bosib
+o'tardi, keyin TFNG YANA boshidan boshlanardi.
 """
 from django.test import SimpleTestCase
 
-from apps.catalog.shorts_pipeline import _order_quiz, _proof_seconds, _sort_by_proof
+from apps.catalog.shorts_pipeline import (
+    _order_quiz,
+    _proof_seconds,
+    _sort_by_proof,
+    sequence_is_chronological,
+)
 
 
 def q(name, proof):
@@ -81,3 +93,86 @@ class OrderQuizTests(SimpleTestCase):
 
     def test_missing_lists_are_ignored(self):
         self.assertEqual(_order_quiz({}), {})
+
+
+class GlobalNumberTests(SimpleTestCase):
+    """`number` — VIDEO bo'yicha xronologik o'rin (bo'limlardan qat'i nazar)."""
+
+    def _numbers(self, out):
+        """Ko'rsatish tartibidagi (MCQ → TFNG → Fill) raqamlar."""
+        return [
+            x["number"]
+            for key in ("multiple_choice_questions", "tfng_questions", "fill_gap_questions")
+            for x in out.get(key, [])
+        ]
+
+    def test_sections_in_order_get_natural_numbers(self):
+        """AI 5-qoidani bajargan holat — raqamlar 1..N ketma-ket."""
+        out = _order_quiz({
+            "multiple_choice_questions": [q("m1", "[4.0] a"), q("m2", "[18.5] b")],
+            "tfng_questions": [q("t1", "[33.2] c"), q("t2", "[51.0] d")],
+        })
+        self.assertEqual(self._numbers(out), [1, 2, 3, 4])
+
+    def test_overlapping_sections_are_renumbered_chronologically(self):
+        """AI 5-qoidani BUZGAN holat — foydalanuvchi ko'rgan "3, 1, 2, 4".
+
+        MCQ [4.0, 51.0], TFNG [18.5, 33.2] — pozitsiya bo'yicha raqamlansa
+        2-savol 51-soniyada, 3-savol esa 18.5-soniyada bo'lardi. `number`
+        buni to'g'rilaydi: vaqt bo'yicha 4.0 → 18.5 → 33.2 → 51.0.
+        """
+        out = _order_quiz({
+            "multiple_choice_questions": [q("m1", "[4.0] a"), q("m2", "[51.0] b")],
+            "tfng_questions": [q("t1", "[18.5] c"), q("t2", "[33.2] d")],
+        })
+        self.assertEqual(self._numbers(out), [1, 4, 2, 3])
+
+    def test_numbers_increase_with_time(self):
+        """Asosiy invariant: vaqt bo'yicha saralasak raqamlar ham o'sadi."""
+        out = _order_quiz({
+            "multiple_choice_questions": [q("m1", "[70.0] a"), q("m2", "[10.0] b")],
+            "tfng_questions": [q("t1", "[40.0] c")],
+            "fill_gap_questions": [q("f1", "[25.0] d")],
+        })
+        pairs = sorted(
+            (
+                (_proof_seconds(x), x["number"])
+                for key in ("multiple_choice_questions", "tfng_questions", "fill_gap_questions")
+                for x in out.get(key, [])
+            ),
+        )
+        self.assertEqual([n for _, n in pairs], [1, 2, 3, 4])
+
+    def test_not_given_inherits_neighbour_position(self):
+        """Isbotsiz savol qo'shnisidan keyin turadi, raqami ham shunga qarab."""
+        out = _order_quiz({
+            "multiple_choice_questions": [q("m1", "[5.0] a")],
+            "tfng_questions": [q("t1", "[20.0] b"), q("ng", "")],
+        })
+        self.assertEqual(self._numbers(out), [1, 2, 3])
+
+    def test_every_question_gets_a_unique_number(self):
+        out = _order_quiz({
+            "multiple_choice_questions": [q("a", "[5.0] x"), q("b", "[5.0] y")],
+            "tfng_questions": [q("c", "[5.0] z")],
+        })
+        self.assertEqual(sorted(self._numbers(out)), [1, 2, 3])
+
+
+class SequenceCheckTests(SimpleTestCase):
+    """`sequence_is_chronological` — AI 5-qoidani bajardimi (faqat log uchun)."""
+
+    def test_true_when_sections_are_consecutive_windows(self):
+        self.assertTrue(sequence_is_chronological({
+            "multiple_choice_questions": [q("m1", "[4.0] a"), q("m2", "[18.5] b")],
+            "tfng_questions": [q("t1", "[33.2] c")],
+        }))
+
+    def test_false_when_sections_overlap(self):
+        self.assertFalse(sequence_is_chronological({
+            "multiple_choice_questions": [q("m1", "[4.0] a"), q("m2", "[51.0] b")],
+            "tfng_questions": [q("t1", "[18.5] c")],
+        }))
+
+    def test_empty_quiz_is_fine(self):
+        self.assertTrue(sequence_is_chronological({}))

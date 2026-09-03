@@ -130,17 +130,94 @@ def _sort_by_proof(questions: list) -> list:
     return [q for _, _, q in keyed]
 
 
-def _order_quiz(quiz: dict) -> dict:
-    """Quiz ichidagi HAR bir ro'yxatni alohida saralaydi.
+# Frontend savol raqamini SHU tartibda hisoblaydi: avval MCQ, keyin TFNG,
+# oxirida Fill-gap. Har bo'lim uchun bir nechta kalit bo'lishi mumkin (AI
+# ba'zan `true_false_questions` deb yozadi).
+_SECTIONS: tuple[tuple[str, ...], ...] = (
+    ("multiple_choice_questions",),
+    ("tfng_questions", "true_false_questions"),
+    ("fill_gap_questions",),
+)
 
-    Ro'yxatlar bir-biridan mustaqil: MCQ 1..N videoni boshidan oxirigacha
-    bosib o'tadi, keyin TFNG yana boshidan boshlanadi, keyin Fill-gap.
-    Frontend raqamlashi ham shu tartibda: MCQ → TFNG → Fill.
+
+def _display_sequence(quiz: dict) -> list[dict]:
+    """Foydalanuvchi ko'radigan YAGONA ro'yxat (MCQ → TFNG → Fill)."""
+    out: list[dict] = []
+    for keys in _SECTIONS:
+        for key in keys:
+            lst = quiz.get(key)
+            if isinstance(lst, list):
+                out.extend(q for q in lst if isinstance(q, dict))
+                break
+    return out
+
+
+def _effective_seconds(questions: list[dict]) -> list[float]:
+    """Har savolning isbot vaqti; isbotsizi ("Not given") — oldingisiniki.
+
+    Shunda timestampsiz savol qo'shnisidan ajralib ketmaydi, lekin ketma-ketlik
+    baribir monoton bo'ladi.
+    """
+    out: list[float] = []
+    carry = 0.0
+    for q in questions:
+        sec = _proof_seconds(q)
+        if sec is None:
+            sec = carry
+        else:
+            carry = sec
+        out.append(sec)
+    return out
+
+
+def sequence_is_chronological(quiz: dict) -> bool:
+    """Yagona ro'yxat (MCQ → TFNG → Fill) video bo'yicha oldinga yuradimi?
+
+    Ya'ni AI 5-qoidani bajardimi. Faqat tekshiradi — `_order_quiz` uni
+    baribir majburan to'g'rilaydi.
+    """
+    secs = _effective_seconds(_display_sequence(quiz))
+    return all(a <= b for a, b in zip(secs, secs[1:]))
+
+
+def _number_globally(quiz: dict) -> None:
+    """Har savolga `number` — VIDEO bo'yicha xronologik o'rin (1..N).
+
+    ## Nega raqam serverda hisoblanadi
+
+    Ilgari raqam mijozda pozitsiyadan chiqarilardi: MCQ 1..M, keyin TFNG
+    M+1.., keyin Fill. Har bo'lim esa videoni BOSHIDAN oxirigacha alohida
+    bosib o'tardi, ya'ni 2-savol (oxirgi MCQ) 90-soniyada, 3-savol (birinchi
+    TFNG) 8-soniyada bo'lishi mumkin edi. Foydalanuvchi buni aynan shunday
+    ko'rdi: *"oldin 3, 1, 2, 4 shu tartibda javob kelayabdi"*.
+
+    Prompt endi bitta o'tishni talab qiladi (`ai/prompt_shorts.txt`, 5-qoida),
+    lekin LLM'ga TAYANIB bo'lmaydi. Shu bois raqam bu yerda, isbot vaqti
+    bo'yicha beriladi: **1-savolning javobi eng erta eshitiladi, keyin 2-niki**
+    — modeldan qat'i nazar, 100%.
+
+    Tartib barqaror (stable): bir xil vaqtli savollar ko'rsatish tartibida
+    qoladi. Mijozlar `q.number` ni ishlatadi (bo'lmasa — eski pozitsiya).
+    """
+    seq = _display_sequence(quiz)
+    secs = _effective_seconds(seq)
+    order = sorted(range(len(seq)), key=lambda i: (secs[i], i))
+    for rank, idx in enumerate(order, start=1):
+        seq[idx]["number"] = rank
+
+
+def _order_quiz(quiz: dict) -> dict:
+    """Savollarni ketma-ketlikka soladi — IKKI bosqichda.
+
+    1. **Har ro'yxat ichida** isbot vaqti bo'yicha saralanadi.
+    2. **Butun ro'yxat bo'ylab** xronologik `number` qo'yiladi (bo'limlar
+       vaqt bo'yicha ustma-ust tushib qolsa ham raqam to'g'ri bo'ladi).
     """
     for key in ("multiple_choice_questions", "tfng_questions",
                 "true_false_questions", "fill_gap_questions"):
         if isinstance(quiz.get(key), list):
             quiz[key] = _sort_by_proof(quiz[key])
+    _number_globally(quiz)
     return quiz
 
 
@@ -589,6 +666,14 @@ def generate_short(short: Short) -> Short:
     #    tuzatilgan vaqtga tayanishi kerak, aks holda saralash ham xato bo'ladi.
     quiz = ai["quiz"]
     align_proof_timestamps(quiz, words)
+    if not sequence_is_chronological(quiz):
+        # Raqamlash baribir to'g'rilanadi (`_number_globally`), lekin
+        # promptning 5-qoidasi buzilgani bilinib tursin — prompt qanchalik
+        # ishlayotganini shu log bilan o'lchaymiz.
+        logger.warning(
+            "Short #%s: AI savollarni xronologik bermadi (prompt 5-qoida).",
+            short.pk,
+        )
     quiz = _order_quiz(quiz)
     short.cefr_from = (ev.get("cefr_from") or "").strip()
     short.cefr_to = (ev.get("cefr_to") or "").strip()
@@ -636,10 +721,15 @@ def generate_dictation_tests(dictation) -> None:
         dictation.save(update_fields=["tests_status", "tests_error", "updated_at"])
         raise
 
-    # Avval `[t]` larni haqiqiy vaqtga moslaymiz, keyin saralaymiz
-    # (`align_proof_timestamps` izohiga qarang).
+    # Avval `[t]` larni haqiqiy vaqtga moslaymiz, keyin saralab raqamlaymiz
+    # (`align_proof_timestamps` va `_order_quiz` izohlariga qarang).
     quiz = ai["quiz"]
     align_proof_timestamps(quiz, dictation.words_json or [])
+    if not sequence_is_chronological(quiz):
+        logger.warning(
+            "Dictation #%s: AI savollarni xronologik bermadi (prompt 5-qoida).",
+            dictation.pk,
+        )
     quiz = _order_quiz(quiz)
     dictation.mcq_questions = quiz.get("multiple_choice_questions") or []
     dictation.tfng_questions = (

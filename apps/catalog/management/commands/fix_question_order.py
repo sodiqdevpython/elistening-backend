@@ -1,12 +1,18 @@
-"""Mavjud savollarni isbot vaqti bo'yicha qayta saralaydi.
+"""Mavjud savollarni video bo'yicha ketma-ketlikka soladi.
 
-Server endi AI natijasini saqlashdan oldin majburan saralaydi
+Server endi AI natijasini saqlashdan oldin majburan tartibga soladi
 (`shorts_pipeline._order_quiz`), lekin undan OLDIN yaratilgan Short va
-Dictation yozuvlarida savollar hali ham chalkash tartibda yotibdi —
-masalan MCQ isbotlari `[32.6, 136.7, 5.8, 88.7, 101.7]`.
+Dictation yozuvlari eski holatda qoladi. Ikkita muammo bor edi:
 
-Bu komanda AI'ga umuman murojaat qilmaydi (token sarflanmaydi) — faqat
-bazadagi ro'yxatlarni qayta tartiblaydi.
+1. **Ro'yxat ichida** isbot vaqtlari chalkash — masalan MCQ isbotlari
+   `[32.6, 136.7, 5.8, 88.7, 101.7]`.
+2. **Ro'yxatlar orasida** — har bo'lim videoni boshidan oxirigacha alohida
+   bosib o'tardi, ya'ni 2-savol 90-soniyada, 3-savol esa 8-soniyada bo'lardi.
+   Foydalanuvchi buni "javoblar 3, 1, 2, 4 tartibda kelayabdi" deb ko'rardi.
+
+Komanda ikkalasini ham tuzatadi: ro'yxatlarni saralaydi va har savolga
+xronologik `number` qo'yadi. AI'ga umuman murojaat qilmaydi — token
+sarflanmaydi.
 
     python manage.py fix_question_order            # nima o'zgarishini ko'rsatadi
     python manage.py fix_question_order --apply    # bazaga yozadi
@@ -14,23 +20,27 @@ bazadagi ro'yxatlarni qayta tartiblaydi.
 from django.core.management.base import BaseCommand
 
 from apps.catalog.models import Dictation, Short
-from apps.catalog.shorts_pipeline import _proof_seconds, _sort_by_proof
+from apps.catalog.shorts_pipeline import _order_quiz, sequence_is_chronological
 
 FIELDS = ("mcq_questions", "tfng_questions", "fill_gap_questions")
 
+# Model maydonlari ↔ quiz kalitlari.
+_QUIZ_KEYS = {
+    "mcq_questions": "multiple_choice_questions",
+    "tfng_questions": "tfng_questions",
+    "fill_gap_questions": "fill_gap_questions",
+}
 
-def _timestamps(questions):
-    return [_proof_seconds(q) for q in (questions or []) if isinstance(q, dict)]
 
-
-def _is_ordered(questions) -> bool:
-    """Ro'yxatdagi timestamp'lar o'sish tartibidami (isbotsizlar hisobga olinmaydi)."""
-    secs = [s for s in _timestamps(questions) if s is not None]
-    return secs == sorted(secs)
+def _to_quiz(obj) -> dict:
+    return {
+        quiz_key: list(getattr(obj, field, None) or [])
+        for field, quiz_key in _QUIZ_KEYS.items()
+    }
 
 
 class Command(BaseCommand):
-    help = "Short va Dictation savollarini isbot vaqti bo'yicha qayta saralaydi."
+    help = "Short va Dictation savollarini video bo'yicha ketma-ketlikka soladi."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -45,27 +55,32 @@ class Command(BaseCommand):
         for model, label in ((Short, "Short"), (Dictation, "Dictation")):
             fixed = 0
             for obj in model.objects.all().iterator():
-                changed = []
-                for field in FIELDS:
-                    questions = getattr(obj, field, None)
-                    if not questions or _is_ordered(questions):
-                        continue
-                    setattr(obj, field, _sort_by_proof(questions))
-                    changed.append(field)
+                before = _to_quiz(obj)
+                if not any(before.values()):
+                    continue
+                was_chronological = sequence_is_chronological(before)
+                after = _order_quiz(_to_quiz(obj))
+
+                changed = [
+                    field for field, quiz_key in _QUIZ_KEYS.items()
+                    if after[quiz_key] != (getattr(obj, field, None) or [])
+                ]
                 if not changed:
                     continue
+
                 fixed += 1
-                self.stdout.write(
-                    f"  {label} #{obj.pk} — {', '.join(changed)}"
-                )
+                why = "tartib" if not was_chronological else "raqamlash"
+                self.stdout.write(f"  {label} #{obj.pk} — {why}: {', '.join(changed)}")
                 if apply_changes:
-                    obj.save(update_fields=[*changed, "updated_at"])
+                    for field, quiz_key in _QUIZ_KEYS.items():
+                        setattr(obj, field, after[quiz_key])
+                    obj.save(update_fields=[*FIELDS, "updated_at"])
             total_fixed += fixed
-            self.stdout.write(f"{label}: {fixed} ta yozuvda tartib buzilgan edi.")
+            self.stdout.write(f"{label}: {fixed} ta yozuv tuzatildi.")
 
         if apply_changes:
             self.stdout.write(self.style.SUCCESS(
-                f"Tayyor — {total_fixed} ta yozuv saralandi.",
+                f"Tayyor — {total_fixed} ta yozuv tartibga solindi.",
             ))
         else:
             self.stdout.write(self.style.WARNING(
