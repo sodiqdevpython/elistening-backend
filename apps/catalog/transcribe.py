@@ -195,21 +195,21 @@ def fetch_youtube_title(url: str) -> str:
         return ""
 
 
-def _fetch_from_parser(url: str, parser_url: str, tmp_dir: str) -> str:
+def _fetch_from_parser(url: str, parser_url: str, tmp_dir: str) -> Path:
     """Uy PC'dagi parser xizmatidan (residential IP) audio oladi.
 
     VPS (data-markaz IP) YouTube tomonidan bloklanadi ("Sign in to confirm
     you're not a bot"); parser esa uy internetidan bemalol yuklaydi. Ulanib
     bo'lmasa `ParserUnavailable` (worker qayta uradi), parserning O'ZI xato
     bersa (private video va h.k.) `TranscriptionError`.
+
+    `Path` qaytaradi (yt-dlp yo'li bilan bir xil — chaqiruvchi `.stat()` qiladi).
     """
     import requests
 
-    token = (os.environ.get("PARSER_TOKEN") or "").strip()
-    headers = {"X-Parser-Token": token} if token else {}
     try:
         resp = requests.get(
-            f"{parser_url}/audio", params={"url": url}, headers=headers,
+            f"{parser_url}/audio", params={"url": url},
             stream=True, timeout=(10, 600),
         )
     except requests.RequestException as exc:
@@ -219,8 +219,6 @@ def _fetch_from_parser(url: str, parser_url: str, tmp_dir: str) -> str:
     if resp.status_code in (502, 503, 504):
         # jprq tunnel tirik, lekin orqadagi PC javob bermayapti → vaqtinchalik.
         raise ParserUnavailable(f"Parser javob bermadi ({resp.status_code}) — PC o'chiq bo'lishi mumkin.")
-    if resp.status_code == 401:
-        raise TranscriptionError("Parser token noto'g'ri (PARSER_TOKEN mos emas).")
     if resp.status_code != 200:
         detail = ""
         try:
@@ -229,12 +227,12 @@ def _fetch_from_parser(url: str, parser_url: str, tmp_dir: str) -> str:
             pass
         raise TranscriptionError(f"Parser audio bermadi ({resp.status_code}): {detail}")
 
-    path = os.path.join(tmp_dir, "audio.mp3")
+    path = Path(tmp_dir) / "audio.mp3"
     with open(path, "wb") as f:
         for chunk in resp.iter_content(chunk_size=65536):
             if chunk:
                 f.write(chunk)
-    if not os.path.exists(path) or os.path.getsize(path) == 0:
+    if not path.exists() or path.stat().st_size == 0:
         raise TranscriptionError("Parser bo'sh audio qaytardi.")
     return path
 
