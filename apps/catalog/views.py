@@ -10,7 +10,8 @@ from apps.common.pagination import StandardPageNumberPagination
 
 from .models import (
     DeadVideoReport, Dictation, DictationProgress, DictationQuestionFeedback,
-    DictationReport, IeltsListeningTest, Short, ShortQuestionFeedback, ShortReport,
+    DictationReport, IeltsListeningTest, IeltsListeningTestResult, Short,
+    ShortQuestionFeedback, ShortReport,
 )
 from .serializers import (
     DictationDetailSerializer, DictationListSerializer,
@@ -312,6 +313,57 @@ def dictation_types(request):
     return Response(data)
 
 
+def _priority_boost(request):
+    """`priority` — lekin FAQAT foydalanuvchi hali ko'rmagan videolar uchun.
+
+    **Muammo.** Ilgari lenta shunchaki `-priority` bo'yicha saralanardi.
+    Natijada priority'si baland video har kirganda yana birinchi chiqardi va
+    o'chirilmaguncha o'sha yerda turardi. Foydalanuvchi aytganidek, priority
+    "kamida BIR MARTA hammaga ko'rsatilsin" degani, "abadiy birinchi" emas.
+
+    (Mo'ljal `exclude=` mijoz tomonidan kelishiga edi, lekin Shorts lentasi
+    uni yubormaydi — shu bois hech qachon ishlamagan.)
+
+    **Yechim.** Ko'rilganini SERVER biladi: `DailyUsage` har ko'rishda bitta
+    qator yozadi (limit hisobi uchun) — ya'ni "bu odam bu kontentni ko'rgan"
+    ma'lumoti allaqachon bor. Ko'rilgan video uchun boost 0 ga tushadi va u
+    oddiy videolar qatoriga qo'shilib, tasodifiy tartibda chiqaveradi.
+
+    Anonim foydalanuvchida tarix yo'q — priority o'z holicha ishlaydi.
+
+    Tezlik: faqat priority'si 0 dan katta videolar tekshiriladi (ular kam),
+    ya'ni so'rov foydalanuvchining butun tarixini o'qimaydi.
+    """
+    from django.db.models import Case, IntegerField, Value, When
+
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        return F("priority")
+
+    from apps.billing.models import DailyUsage
+
+    priority_ids = list(
+        Short.objects.filter(priority__gt=0).values_list("id", flat=True)
+    )
+    if not priority_ids:
+        return F("priority")
+
+    seen = set(
+        DailyUsage.objects
+        .filter(user=user, kind="shorts", ref__in=[str(i) for i in priority_ids])
+        .values_list("ref", flat=True)
+    )
+    seen_ids = [i for i in priority_ids if str(i) in seen]
+    if not seen_ids:
+        return F("priority")
+
+    return Case(
+        When(id__in=seen_ids, then=Value(0)),
+        default=F("priority"),
+        output_field=IntegerField(),
+    )
+
+
 class ShortViewSet(viewsets.ReadOnlyModelViewSet):
     """Shorts — feed va batafsil ko'rinish.
 
@@ -392,17 +444,17 @@ class ShortViewSet(viewsets.ReadOnlyModelViewSet):
             if ids:
                 qs = qs.exclude(id__in=ids)
 
-        # `?random=1` — lenta tartibi. Tasodifiy, LEKIN `priority` qat'iy
-        # pog'ona bo'lib turadi: avval eng yuqori priority'lilar (o'zaro
-        # tasodifiy), keyin pastroqlari. Ko'rilgan videolar chaqiruvchi
-        # tomonidan `exclude=` ga qo'yilgani sabab, yuqori priority'li
-        # KO'RILMAGAN video har doim lentaning boshida chiqadi.
+        # Priority — "KAMIDA BIR MARTA ko'rsatish", "abadiy birinchi" EMAS.
+        qs = qs.annotate(boost=_priority_boost(self.request))
+
+        # `?random=1` — lenta tartibi. Tasodifiy, LEKIN ko'rilmagan
+        # priority'lilar oldinda turadi.
         #
         # `?random=0` yoki umuman berilmasa — eng yangilari birinchi
         # (news/movies/cartoons feed'lari shuni ishlatadi).
         if self.request.query_params.get("random") == "1":
-            return qs.order_by("-priority", "?")
-        return qs.order_by("-priority", "-created_at")
+            return qs.order_by("-boost", "?")
+        return qs.order_by("-boost", "-created_at")
 
     def retrieve(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -715,20 +767,64 @@ class IeltsListeningTestViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = StandardPageNumberPagination
 
     def get_queryset(self):
-        return IeltsListeningTest.objects.filter(
+        qs = IeltsListeningTest.objects.filter(
             is_published=True,
-        ).exclude(html="").order_by("-created_at")
+        ).exclude(html="").order_by("-created_at")  # eng yangisi doim tepada
+
+        # Qidiruv — sarlavha bo'yicha (ro'yxat sahifasidagi qidiruv maydoni).
+        search = (self.request.query_params.get("search") or "").strip()
+        if search:
+            qs = qs.filter(title__icontains=search)
+
+        # "Bajarilgan / bajarilmagan" filtri — foydalanuvchi natijalariga qarab.
+        # `?done=1` faqat topshirilganlar, `?done=0` faqat topshirilmaganlar,
+        # berilmasa hammasi (default). Anonim uchun "done" bo'sh — filtr yo'q.
+        done = self.request.query_params.get("done")
+        user = getattr(self.request, "user", None)
+        if done in ("0", "1") and user and user.is_authenticated:
+            done_ids = IeltsListeningTestResult.objects.filter(
+                user=user,
+            ).values_list("test_id", flat=True)
+            qs = qs.filter(pk__in=done_ids) if done == "1" else qs.exclude(pk__in=done_ids)
+        return qs
 
     def get_serializer_class(self):
         if self.action == "retrieve":
             return IeltsListeningTestDetailSerializer
         return IeltsListeningTestListSerializer
 
+    def _my_results_map(self, tests):
+        """`{test_id: IeltsListeningTestResult}` — joriy foydalanuvchi uchun.
+        Ro'yxat/detail serializer "bajarilgan" belgisi va oldingi natija uchun."""
+        user = getattr(self.request, "user", None)
+        if not user or not user.is_authenticated:
+            return {}
+        ids = [t.id for t in tests] if isinstance(tests, (list, tuple)) else [tests.id]
+        rows = IeltsListeningTestResult.objects.filter(user=user, test_id__in=ids)
+        return {r.test_id: r for r in rows}
+
+    def list(self, request, *args, **kwargs):
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        objs = page if page is not None else list(self.get_queryset())
+        ctx = {**self.get_serializer_context(), "my_results": self._my_results_map(objs)}
+        ser = self.get_serializer(objs, many=True, context=ctx)
+        if page is not None:
+            return self.get_paginated_response(ser.data)
+        return Response(ser.data)
+
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
+        # Kunlik IELTS limiti — kontent OCHILGANDA (mobil/dictation bilan bir xil).
+        # `enforce_or_response` idempotent: bugun ochilgan testni qayta ochsa
+        # o'tkazadi, limit tugagach YANGI testni bloklaydi (403 → LimitGate modal).
+        from apps.billing.limits import enforce_or_response
+        limited = enforce_or_response(request, "ielts", instance.pk)
+        if limited is not None:
+            return limited
         IeltsListeningTest.objects.filter(pk=instance.pk).update(views=instance.views + 1)
         instance.views += 1
-        return Response(self.get_serializer(instance).data)
+        ctx = {**self.get_serializer_context(), "my_results": self._my_results_map(instance)}
+        return Response(self.get_serializer(instance, context=ctx).data)
 
     @action(detail=True, methods=["post"], url_path="submit",
             permission_classes=[IsAuthenticated])
@@ -773,6 +869,15 @@ class IeltsListeningTestViewSet(viewsets.ReadOnlyModelViewSet):
             results[str(q)] = ok
             if ok:
                 score += 1
+
+        # Natijani PROFILGA saqlaymiz — har (user, test) uchun BITTA qator
+        # (qayta topshirsa yangilanadi). Test sahifasiga qaytilganda ko'rsatiladi
+        # va ro'yxatda "bajarilgan" belgisi shu yozuvdan chiqadi.
+        if request.user and request.user.is_authenticated:
+            IeltsListeningTestResult.objects.update_or_create(
+                user=request.user, test=test,
+                defaults={"score": score, "total": total, "results_json": results},
+            )
         return Response({
             "score": score,
             "total": total,

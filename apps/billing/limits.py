@@ -3,6 +3,9 @@
 Turlar (`kind`): `shorts`, `video`, `dictation`, `ielts`.
 Limit: `None` = cheksiz, `0` = umuman mumkin emas, N = kuniga N ta noyob kontent.
 """
+import hashlib
+
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -13,12 +16,92 @@ KINDS = DailyUsage.KINDS
 _NOTIFY_KIND = "_limit_notified"  # bir kunda bir marta bot SMS uchun belgisi
 
 
+#: Foydalanuvchining tarifi shuncha keshlanadi (soniya).
+#: Tarif kamdan-kam o'zgaradi, lekin HAR video ko'rishda o'qiladi — shu bois
+#: kesh eng katta foydani shu yerda beradi. O'zgarganda darrov tozalanadi
+#: (`forget_user_plan`), ya'ni TTL faqat zaxira.
+PLAN_CACHE_TTL = 300
+
+
+def _plan_cache_key(user_id) -> str:
+    return f"user_plan_v1_{user_id}"
+
+
+def forget_user_plan(user_or_id) -> None:
+    """Tarif o'zgarganda keshni tozalaydi.
+
+    `grants.grant_plan` va `billing.views.subscribe` shuni chaqiradi —
+    aks holda foydalanuvchi tarifi ko'tarilgani bilan `PLAN_CACHE_TTL`
+    davomida eski limitlar amal qilardi.
+    """
+    user_id = getattr(user_or_id, "pk", user_or_id)
+    if user_id:
+        cache.delete(_plan_cache_key(user_id))
+
+
 def get_user_plan(user) -> Plan | None:
-    """Foydalanuvchining joriy tarifi (faol obuna) yoki standart (free)."""
-    sub = user.subscriptions.select_related("plan").first()
-    if sub and sub.is_active:
-        return sub.plan
-    return Plan.objects.filter(is_default=True).first() or Plan.objects.filter(code="free").first()
+    """Foydalanuvchining joriy tarifi (faol obuna) yoki standart (free).
+
+    **Keshlanadi** (`PLAN_CACHE_TTL`): bu funksiya har video ko'rishda,
+    har limit tekshiruvida va profil so'rovida chaqiriladi, lekin javob
+    kunlar davomida o'zgarmaydi.
+
+    Keshda `Plan` obyekti emas, uning **id**'si saqlanadi va tariflar
+    jadvali (bor-yo'g'i bir necha qator) alohida keshdan olinadi. Sabab:
+    ORM obyektini pickle qilib qo'ysak, model maydonlari o'zgargan deploy'dan
+    keyin kesh ochilmay xato berardi.
+    """
+    key = _plan_cache_key(user.pk)
+    plan_id = cache.get(key)
+    if plan_id is None:
+        sub = user.subscriptions.select_related("plan").first()
+        if sub and sub.is_active:
+            plan_id = sub.plan_id
+        else:
+            default = _default_plan()
+            plan_id = default.id if default else 0
+        cache.set(key, plan_id, PLAN_CACHE_TTL)
+    if not plan_id:
+        return None
+    return _plans_by_id().get(plan_id)
+
+
+def _plans_cache_key() -> str:
+    """Kalitga model MAYDONLARI ham kiradi.
+
+    Keshda `Plan` obyektlari (pickle) yotadi. Agar keyingi deploy'da modelga
+    maydon qo'shilsa, eski pickle'da u bo'lmaydi va kod `AttributeError`
+    bilan yiqilardi. Maydonlar ro'yxati kalitning bir qismi bo'lgani uchun
+    bunday holatda kalit O'ZGARADI — eski yozuv shunchaki e'tiborsiz qoladi
+    va TTL bilan o'zi yo'qoladi. Qo'lda tozalash kerak emas.
+    """
+    names = ",".join(sorted(f.name for f in Plan._meta.get_fields()))
+    return f"plans_by_id_v1_{hashlib.md5(names.encode()).hexdigest()[:8]}"
+
+
+def _plans_by_id() -> dict[int, Plan]:
+    """Barcha tariflar (jadval bir necha qator) — keshdan, so'rovsiz."""
+    key = _plans_cache_key()
+    plans = cache.get(key)
+    if plans is None:
+        plans = {p.id: p for p in Plan.objects.all()}
+        cache.set(key, plans, PLAN_CACHE_TTL)
+    return plans
+
+
+def forget_plans() -> None:
+    """Tariflar jadvali o'zgarganda (admin) keshni tozalaydi — `signals.py`."""
+    cache.delete(_plans_cache_key())
+
+
+def _default_plan() -> Plan | None:
+    for plan in _plans_by_id().values():
+        if plan.is_default:
+            return plan
+    for plan in _plans_by_id().values():
+        if plan.code == "free":
+            return plan
+    return None
 
 
 def used_today(user, kind: str) -> int:
@@ -46,23 +129,31 @@ def snapshot(user, plan: Plan | None = None) -> dict:
     }
 
 
-def consume(user, kind: str, ref) -> tuple[bool, dict]:
-    """Kontentni "ishlatishga" urinadi. (allowed, snapshot) qaytaradi.
+def consume(user, kind: str, ref) -> tuple[bool, Plan | None]:
+    """Kontentni "ishlatishga" urinadi. `(allowed, plan)` qaytaradi.
 
     Idempotent: bir xil (user, date, kind, ref) qayta chaqirilsa yana sanamaydi.
+
+    **Snapshot BU YERDA yasalmaydi.** Ilgari uchala yo'lda ham `snapshot()`
+    chaqirilardi va u har turdagi limit uchun bittadan COUNT qiladi — ya'ni
+    RUXSAT BERILGAN oddiy holatda ham 4 ta ortiqcha so'rov ketardi. Holbuki
+    snapshot faqat 403 javobining ichida kerak. `POST /shorts/{id}/view/`
+    ilovadagi eng tez-tez chaqiriladigan endpoint (har slot uchun bitta),
+    shu bois bu eng qimmat isrof edi: **17 → 8 so'rov**.
     """
     today = timezone.localdate()
     ref = str(ref)[:64]
-    if DailyUsage.objects.filter(user=user, date=today, kind=kind, ref=ref).exists():
-        return True, snapshot(user)
-
     plan = get_user_plan(user)
+
+    if DailyUsage.objects.filter(user=user, date=today, kind=kind, ref=ref).exists():
+        return True, plan
+
     lim = plan.limit_for(kind) if plan else None
     if lim is not None and used_today(user, kind) >= lim:
-        return False, snapshot(user, plan)
+        return False, plan
 
     DailyUsage.objects.get_or_create(user=user, date=today, kind=kind, ref=ref)
-    return True, snapshot(user, plan)
+    return True, plan
 
 
 def notify_limit_once(user) -> None:
@@ -133,9 +224,11 @@ def enforce_or_response(request, kind: str, ref):
     user = getattr(request, "user", None)
     if not user or not user.is_authenticated:
         return None
-    allowed, snap = consume(user, kind, ref)
+    allowed, plan = consume(user, kind, ref)
     if allowed:
         return None
+    # Snapshot faqat SHU YERDA kerak — 403 javobining ichida.
+    snap = snapshot(user, plan)
     if (request.headers.get("X-Platform") or "").lower() == "mobile":
         notify_limit_once(user)
     return Response(

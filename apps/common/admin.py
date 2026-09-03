@@ -62,16 +62,37 @@ class SiteConfigAdmin(admin.ModelAdmin):
 
 @admin.register(AppAd)
 class AppAdAdmin(BaseModelAdmin):
-    """Mobil ilova reklamalari — rasm/gif + matn, faol bittasi ko'rsatiladi."""
+    """Ilova VA sayt reklamalari — rasm/gif + matn, faol bittasi ko'rsatiladi.
 
-    list_display = ("__str__", "is_active", "preview", "duration_sec", "created_at")
+    Ikkita rasm: `image` (mobil, tik) va `image_web` (sayt, keng). Qolgan
+    hamma narsa — sarlavha, matn, havola, avto-yopilish — bir xil.
+    Sayt rasmi bo'sh qoldirilsa mobil rasm ishlatiladi.
+    """
+
+    list_display = ("__str__", "is_active", "preview", "preview_web", "duration_sec", "created_at")
     list_editable = ("is_active",)
     list_filter = ("is_active",)
-    fields = ("is_active", "image", "preview", "title", "body", "link_url", "duration_sec", "created_at", "updated_at")
-    readonly_fields = ("preview", "created_at", "updated_at")
+    fieldsets = (
+        (None, {"fields": ("is_active", "title", "body", "link_url", "duration_sec")}),
+        ("Rasmlar", {
+            "fields": ("image", "preview", "image_web", "preview_web"),
+            "description": "Mobil rasm odatda TIK, sayt rasmi esa KENG bo'ladi. "
+                           "Sayt rasmi bo'sh qoldirilsa mobil rasm ishlatiladi.",
+        }),
+        ("Xizmat", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+    readonly_fields = ("preview", "preview_web", "created_at", "updated_at")
 
-    @admin.display(description="Ko'rinishi")
+    @staticmethod
+    def _thumb(field):
+        if not field:
+            return "—"
+        return format_html('<img src="{}" style="max-height:120px;border-radius:8px" />', field.url)
+
+    @admin.display(description="Mobil ko'rinishi")
     def preview(self, obj):
-        if obj.image:
-            return format_html('<img src="{}" style="max-height:120px;border-radius:8px" />', obj.image.url)
-        return "—"
+        return self._thumb(obj.image)
+
+    @admin.display(description="Sayt ko'rinishi")
+    def preview_web(self, obj):
+        return self._thumb(obj.image_web)

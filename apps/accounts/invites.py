@@ -7,8 +7,15 @@
    `PendingInvite(telegram_id, inviter)` yozadi (`User` hali yo'q!).
 3. O'sha odam kod bilan saytga/ilovaga kiradi → `TelegramVerifyView` uni
    YARATADI va `attach_pending_invite()` chaqiriladi.
-4. `Invitation` qatori yoziladi (bir odam — bir marta), taklif qilganga bot
-   orqali xabar boradi va `redeem_invites()` sovg'ani tekshiradi.
+4. **Profilni to'ldiradi** (ism + daraja) — `ProfileSetupView`.
+5. FAQAT shundan keyin `Invitation` qatori yoziladi (bir odam — bir marta),
+   taklif qilganga bot orqali xabar boradi va `redeem_invites()` sovg'ani
+   tekshiradi.
+
+**Nega 4-qadam shart:** kod bilan kirishning o'zi "yangi foydalanuvchi"
+degani emas — odam kod olib tashlab ketishi mumkin. Foydalanuvchi shuni
+so'radi: taklif faqat odam ism va darajani belgilab, chindan ro'yxatdan
+o'tgach hisoblansin.
 
 ## Nima uchun sanalMAYDI
 
@@ -42,6 +49,19 @@ NEW_USER_WINDOW = timedelta(days=2)
 DAILY_NOTIFY_MAX = 10
 
 
+def profile_complete(user: User) -> bool:
+    """Odam ro'yxatdan o'tishni TUGATGANMI (ism belgilanganmi).
+
+    Kod bilan kirish yetarli emas: foydalanuvchi ism va darajani belgilab,
+    chindan foydalanuvchiga aylanishi kerak. Aks holda kimdir botga kirib
+    kod olibgina taklif hisobiga tushib qolardi.
+
+    `display_name` — aynan `ProfileSetupView` to'ldiradigan maydon, ilova
+    va sayt ham "profil to'liqmi" ni shundan biladi (`needs_setup`).
+    """
+    return bool((user.display_name or "").strip())
+
+
 def find_inviter(invite_code: str) -> User | None:
     """Taklif kodi bo'yicha foydalanuvchi (kod bo'sh/noto'g'ri bo'lsa None)."""
     code = (invite_code or "").strip().upper()
@@ -51,18 +71,42 @@ def find_inviter(invite_code: str) -> User | None:
 
 
 def remember_pending_invite(telegram_id: int, invite_code: str) -> bool:
-    """Bot `/start <kod>` ni olganda chaqiradi. Yozilgan bo'lsa True.
+    """Bot `/start <kod>` ni olganda chaqiradi. Hisobga olinsa/saqlansa True.
 
-    Bir telegram_id uchun BITTA qator — birinchi bosilgan havola kuchda
-    qoladi (keyin boshqa havola bosilsa taklif qilgan o'zgarmaydi).
+    Bir telegram_id uchun BITTA kutilayotgan qator — birinchi bosilgan havola
+    kuchda qoladi (keyin boshqa havola bosilsa taklif qilgan o'zgarmaydi).
+
+    **Ro'yxatdan o'tib bo'lgan odam ham hisoblanishi mumkin.** Ilgari bu yerda
+    `User.objects.filter(telegram_id=...).exists()` bo'lsa darrov `False`
+    qaytardi, ya'ni "akkaunt bor — demak taklif emas". Amalda esa tartib
+    tez-tez teskari bo'ladi:
+
+        taklif qilgan: "botga kir" -> B o'zi kod oladi -> kod 60 s da
+        eskiradi -> B bir-ikki urinib nihoyat kiradi -> KEYIN taklif
+        havolasi yuboriladi -> B bosadi -> taklif YO'QOLARDI
+
+    Holbuki B chindan ham yangi va chindan ham taklif qilingan. Endi qaror
+    "akkaunt bormi" ga emas, **odam yangimi** ga qarab chiqariladi
+    (`NEW_USER_WINDOW`), va bunday holda taklif shu yerning o'zida hisobga
+    olinadi — keyingi kirishni kutmaymiz.
+
+    Qo'sh hisob xavfi yo'q: `register_invitation` `Invitation.invitee`
+    (OneToOne) va `NEW_USER_WINDOW` tekshiruvlarini o'zi bajaradi.
     """
     inviter = find_inviter(invite_code)
     if inviter is None:
         return False
     if inviter.telegram_id and int(inviter.telegram_id) == int(telegram_id):
         return False  # o'zini o'zi taklif qilish
-    if User.objects.filter(telegram_id=telegram_id).exists():
-        return False  # allaqachon ro'yxatdan o'tgan — taklif emas
+
+    existing = User.objects.filter(telegram_id=telegram_id).first()
+    if existing is not None:
+        # Allaqachon kimdir hisobiga yozilgan — qayta yozmaymiz.
+        if Invitation.objects.filter(invitee=existing).exists():
+            return False
+        # Hali yangi bo'lsa — darrov hisobga olamiz, eski akkaunt bo'lsa yo'q.
+        return register_invitation(inviter, existing, Invitation.Source.BOT) is not None
+
     _, created = PendingInvite.objects.get_or_create(
         telegram_id=telegram_id, defaults={"inviter": inviter},
     )
@@ -79,6 +123,12 @@ def register_invitation(inviter: User, invitee: User, source: str) -> Invitation
         return None
     if timezone.now() - invitee.date_joined > NEW_USER_WINDOW:
         return None  # yangi emas
+    if not profile_complete(invitee):
+        # Ro'yxatdan o'tish TUGALLANMAGAN. Kod bilan kirish yetarli emas:
+        # odam ism va darajani belgilab, chindan foydalanuvchi bo'lishi kerak
+        # (foydalanuvchi talabi). Profil to'ldirilgach `ProfileSetupView`
+        # shu funksiyani qayta chaqiradi va taklif o'shanda sanaladi.
+        return None
     if Invitation.objects.filter(invitee=invitee).exists():
         return None
 

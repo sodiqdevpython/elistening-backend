@@ -15,6 +15,17 @@ from apps.common.models import CEFR, LEVEL_HOURS_REQUIRED, TimeStampedModel, nex
 ALPHABET = string.ascii_uppercase + string.digits
 
 
+def stats_cache_key(user_id) -> str:
+    """`GET /api/me/stats/` javobi shu kalitda keshlanadi.
+
+    Statistika to'rtta OG'IR agregatdan iborat (jami / 7 kun / 30 kun / faol
+    kunlar) va profil ekrani har fokuslanganda so'raydi. Kesh **yozuvda
+    tozalanadi** (`touch_activity`), shu bois hech qachon eskirmaydi — TTL
+    faqat zaxira.
+    """
+    return f"me_stats_v1_{user_id}"
+
+
 def generate_invite_code() -> str:
     return "".join(secrets.choice(ALPHABET) for _ in range(6))
 
@@ -128,6 +139,12 @@ class User(AbstractUser):
             DailyActivity.objects.filter(pk=row.pk).update(seconds=models.F("seconds") + seconds)
         self.last_active_at = timezone.now()
         self.save(update_fields=["last_active_at"])
+        # Statistika keshi endi eskirdi — darrov tozalaymiz, aks holda
+        # foydalanuvchi videoni tugatib profilga kirsa eski raqamni ko'rardi
+        # (ilgari xuddi shu shikoyat bo'lgan).
+        from django.core.cache import cache
+
+        cache.delete(stats_cache_key(self.pk))
 
 
 class DailyActivity(models.Model):

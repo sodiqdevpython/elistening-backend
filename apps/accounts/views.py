@@ -123,11 +123,17 @@ class TelegramVerifyView(APIView):
         user.touch_activity()
 
         # Botga taklif havolasi bilan kirgan bo'lsa — endi hisobga olamiz.
-        # FAQAT yangi foydalanuvchi uchun: eski akkaunt havolani bosib
-        # "yangi taklif" bo'lib qololmaydi (`invites.NEW_USER_WINDOW`).
-        if created:
-            from .invites import attach_pending_invite
-            attach_pending_invite(user)
+        #
+        # HAR kirishda chaqiriladi, faqat `created` da emas. Sabab: havola
+        # ro'yxatdan o'tgandan KEYIN ham bosilishi mumkin (kod 60 s da
+        # eskiraydi, odam bir necha marta urinadi va tartib chalkashadi) —
+        # ilgari bunday `PendingInvite` hech qachon o'qilmay yotib qolardi.
+        #
+        # Bu qo'sh hisobga olib kelmaydi: barcha tekshiruv
+        # `register_invitation` da — `Invitation.invitee` OneToOne (bir odam
+        # bir marta) va `NEW_USER_WINDOW` (eski akkaunt sanalmaydi).
+        from .invites import attach_pending_invite
+        attach_pending_invite(user)
 
         needs_setup = created or not user.display_name
         return Response({
@@ -197,6 +203,13 @@ class ProfileSetupView(APIView):
             fields.append("username")
 
         user.save(update_fields=fields)
+
+        # Ro'yxatdan o'tish ENDI tugadi (ism + daraja bor) — kutilayotgan
+        # taklif shu yerda hisobga olinadi. `TelegramVerifyView` da emas:
+        # kod bilan kirishning o'zi yetarli emas (foydalanuvchi talabi).
+        from .invites import attach_pending_invite
+        attach_pending_invite(user)
+
         return Response(MeSerializer(user, context={"request": request}).data)
 
 
@@ -213,10 +226,29 @@ class MeView(APIView):
         return Response(MeSerializer(request.user, context={"request": request}).data)
 
 
+#: Statistika keshi — yozuvda tozalanadi, TTL faqat zaxira.
+STATS_TTL = 300
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def my_stats(request):
-    return Response(StatsSerializer.build(request.user))
+    """Profil raqamlari — KESHLANGAN (yozuvda darrov tozalanadi).
+
+    To'rtta og'ir agregat (jami / 7 kun / 30 kun / faol kunlar) va profil
+    ekrani har fokuslanganda so'raydi. `touch_activity()` yozganda kesh
+    o'chiriladi, ya'ni raqam hech qachon eskirmaydi.
+    """
+    from django.core.cache import cache
+
+    from .models import stats_cache_key
+
+    key = stats_cache_key(request.user.pk)
+    data = cache.get(key)
+    if data is None:
+        data = StatsSerializer.build(request.user)
+        cache.set(key, data, STATS_TTL)
+    return Response(data)
 
 
 @api_view(["GET"])

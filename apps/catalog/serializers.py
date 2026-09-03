@@ -1,6 +1,8 @@
 """Diktant serializerlari."""
 from rest_framework import serializers
 
+from apps.common.protect import ProtectedFieldsMixin
+
 from .models import (
     Dictation, DictationProgress, DictationQuestionFeedback, DictationReport,
     IeltsListeningTest, Short, ShortQuestionFeedback, ShortReport,
@@ -63,10 +65,21 @@ class DictationListSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
 
-class DictationDetailSerializer(DictationListSerializer):
+class DictationDetailSerializer(ProtectedFieldsMixin, DictationListSerializer):
     """Batafsil ko'rinish — body (chunk timestamp) + words_json (so'z timestamp)
     + AI-generatsiya qilingan listening test savollari.
+
+    Transkript va savollar javobda **o'ralgan** holda ketadi: ular
+    `fields` da qoladi (sxema/dokumentatsiya buzilmaydi), lekin javobda
+    bitta `enc` satriga aylanadi (`apps/common/protect.py`). Mijoz uni
+    avtomatik ochadi — komponentlar o'zgarmaydi.
     """
+
+    #: `enc` ichiga kiradigan maydonlar (qolgani ochiq: sarlavha, daraja, ...).
+    PROTECTED_FIELDS = (
+        "body", "words_json",
+        "mcq_questions", "tfng_questions", "fill_gap_questions",
+    )
 
     body = serializers.JSONField()
     words_json = serializers.JSONField()
@@ -87,9 +100,15 @@ class DictationProgressWriteSerializer(serializers.ModelSerializer):
         fields = ("percent", "last_index", "draft_answers")
 
 
-class ShortListSerializer(serializers.ModelSerializer):
+class ShortListSerializer(ProtectedFieldsMixin, serializers.ModelSerializer):
     """Shorts feed uchun yengil ko'rinish — savollar bilan (frontend darrov
-    videoni ochib javob berishi uchun)."""
+    videoni ochib javob berishi uchun).
+
+    Savollar javobda **o'ralgan** (`enc`) — `DictationDetailSerializer` bilan
+    bir xil qoida.
+    """
+
+    PROTECTED_FIELDS = ("mcq_questions", "tfng_questions", "fill_gap_questions")
 
     class Meta:
         model = Short
@@ -142,20 +161,38 @@ class DictationQuestionFeedbackWriteSerializer(serializers.ModelSerializer):
 
 
 class IeltsListeningTestListSerializer(serializers.ModelSerializer):
-    """Ro'yxatdagi karta uchun — HTML yubormaymiz."""
+    """Ro'yxatdagi karta uchun — HTML yubormaymiz. `my_result` bo'lsa test
+    "bajarilgan" (ro'yxatda belgi + ball ko'rsatiladi)."""
+    my_result = serializers.SerializerMethodField()
+
     class Meta:
         model = IeltsListeningTest
         fields = (
             "id", "slug", "title", "total_questions", "views", "created_at",
+            "my_result",
         )
+
+    def get_my_result(self, obj):
+        # Viewset kontekstga `my_results` (test_id -> {score,total}) qo'yadi.
+        r = (self.context.get("my_results") or {}).get(obj.id)
+        return {"score": r.score, "total": r.total} if r else None
 
 
 class IeltsListeningTestDetailSerializer(serializers.ModelSerializer):
     """Detail — HTML bilan (frontend iframe srcdoc'ga o'rnatadi). Javoblar
-    yuborilmaydi (aks holda foydalanuvchi ko'rib topshirmasdan bilib olardi)."""
+    yuborilmaydi (aks holda foydalanuvchi ko'rib topshirmasdan bilib olardi).
+    `my_result` — foydalanuvchining oxirgi natijasi (qaytganda ko'rsatiladi)."""
+    my_result = serializers.SerializerMethodField()
+
     class Meta:
         model = IeltsListeningTest
         fields = (
             "id", "slug", "title", "total_questions", "html",
-            "views", "created_at",
+            "views", "created_at", "my_result",
         )
+
+    def get_my_result(self, obj):
+        r = (self.context.get("my_results") or {}).get(obj.id)
+        if not r:
+            return None
+        return {"score": r.score, "total": r.total, "results": r.results_json or {}}

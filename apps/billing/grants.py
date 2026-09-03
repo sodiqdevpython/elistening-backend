@@ -98,6 +98,12 @@ def grant_plan(user, plan: Plan, months: int, reason: str, note: str = ""):
         sub._grant_note = note
         sub.save()
 
+    # Tarif o'zgardi — limit keshini darrov tozalaymiz, aks holda
+    # foydalanuvchi yangi tarifni oldi, lekin eski limitlar amal qilardi.
+    from .limits import forget_user_plan
+
+    forget_user_plan(user)
+
     # Signal `post_save` da tarix yozuvini `sub._event` ga qo'yib ketadi.
     return getattr(sub, "_event", None)
 

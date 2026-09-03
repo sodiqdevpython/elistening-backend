@@ -88,10 +88,16 @@ def cls_cache_key() -> str:
 
 
 class AppAd(TimeStampedModel):
-    """Mobil ilova ochilganda chiqadigan reklama (rasm/gif + matn).
+    """Ilova VA sayt ochilganda chiqadigan reklama (rasm/gif + matn).
 
-    `GET /api/app-ad/` eng oxirgi FAOL reklamani beradi. Ilova har cold-start'da
-    (ilk ochilishda) uni ko'rsatadi. Faqat mobil ilova uchun.
+    `GET /api/app-ad/` eng oxirgi FAOL reklamani beradi; ilova ham, sayt ham
+    har cold-start'da (ilk ochilishda) uni ko'rsatadi.
+
+    **Ikki rasm, qolgani bir xil.** Mobil modal tor va tik, sayt moduli esa
+    keng — bitta rasm ikkalasida ham yaxshi ko'rinmaydi. Shu bois
+    `image` (mobil) va `image_web` (sayt) alohida. Sayt rasmi bo'sh
+    qoldirilsa mobil rasm ishlatiladi, ya'ni bitta rasm bersangiz ham
+    ishlayveradi.
     """
 
     is_active = models.BooleanField(
@@ -100,8 +106,14 @@ class AppAd(TimeStampedModel):
                   "eng oxirgi faol reklama ko'rsatiladi.",
     )
     image = models.ImageField(
-        "Rasm yoki GIF", upload_to="ads/", null=True, blank=True,
-        help_text="PNG / JPG / GIF. Modal tepasida ko'rsatiladi.",
+        "Rasm yoki GIF — MOBIL", upload_to="ads/", null=True, blank=True,
+        help_text="PNG / JPG / GIF. Ilovadagi modal tepasida ko'rsatiladi. "
+                  "Odatda tik (portret) rasm.",
+    )
+    image_web = models.ImageField(
+        "Rasm yoki GIF — SAYT", upload_to="ads/", null=True, blank=True,
+        help_text="PNG / JPG / GIF. Saytdagi modal uchun — odatda kengroq "
+                  "(landshaft) rasm. Bo'sh qoldirilsa mobil rasm ishlatiladi.",
     )
     title = models.CharField("Sarlavha", max_length=200, blank=True, default="")
     body = models.TextField(

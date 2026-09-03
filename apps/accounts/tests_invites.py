@@ -6,6 +6,7 @@ yangi sovg'a bermaydi.
 """
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
@@ -56,15 +57,29 @@ class InvitationRulesTests(TestCase):
 
     def test_pending_invite_flow(self):
         self.assertTrue(remember_pending_invite(2222, self.inviter.invite_code))
-        newcomer = User.objects.create(username="new", telegram_id=2222)
+        newcomer = User.objects.create(username="new", telegram_id=2222, display_name="Yangi")
         self.assertIsNotNone(attach_pending_invite(newcomer))
         # Qator ishlatilgach o'chadi
         self.assertFalse(PendingInvite.objects.filter(telegram_id=2222).exists())
         self.assertEqual(self.inviter.invited_count, 1)
 
-    def test_pending_invite_ignored_for_existing_user(self):
-        User.objects.create(username="already", telegram_id=3333)
-        self.assertFalse(remember_pending_invite(3333, self.inviter.invite_code))
+    def test_existing_but_still_new_user_is_counted(self):
+        """Akkaunt bor, lekin odam HALI YANGI — taklif baribir sanaladi.
+
+        Qoida "akkaunt bormi" ga emas, "odam yangimi" ga tayanadi
+        (`NEW_USER_WINDOW`): kod 60 s da eskiraydi va odam ko'pincha avval
+        o'zi kirib, taklif havolasini keyin bosadi.
+        """
+        fresh = User.objects.create(username="already", telegram_id=3333, display_name="Yangi")
+        self.assertTrue(remember_pending_invite(3333, self.inviter.invite_code))
+        self.assertTrue(Invitation.objects.filter(invitee=fresh).exists())
+
+    def test_existing_old_user_is_ignored(self):
+        old_user = User.objects.create(username="veteran", telegram_id=3334, display_name="Veteran")
+        User.objects.filter(pk=old_user.pk).update(
+            date_joined=timezone.now() - timedelta(days=30),
+        )
+        self.assertFalse(remember_pending_invite(3334, self.inviter.invite_code))
 
     def test_wrong_code_ignored(self):
         self.assertFalse(remember_pending_invite(4444, "NOSUCH"))
@@ -262,6 +277,10 @@ class BotToSignupFlowTests(TestCase):
     """
 
     def setUp(self):
+        # `/auth/telegram/verify/` da 5/min throttle bor va DRF hisobni
+        # KESHDA saqlaydi — kesh esa testlar orasida tozalanmaydi. Tozalamasak
+        # ketma-ket testlar 429 olib, "taklif sanalmadi" deb YOLG'ON yiqiladi.
+        cache.clear()
         make_plans()
         self.inviter = make_user(1)
 
@@ -314,3 +333,154 @@ class BotToSignupFlowTests(TestCase):
         self._otp(70001, "444555")
         APIClient().post("/api/auth/telegram/verify/", {"code": "444555"})
         self.assertFalse(TelegramOTP.objects.filter(code="999999").exists())
+
+
+class TimingTests(TestCase):
+    """Kirish kodi 60 s da eskiraydi — taklif SHUNGA BOG'LIQ BO'LMASLIGI kerak.
+
+    Amalda odamlar kodni birinchi urinishda ulgurmaydi: kod eskiradi, yangisi
+    so'raladi, ba'zan esa botga o'zi kirib ro'yxatdan o'tib, taklif havolasini
+    KEYIN bosadi. Shu tartiblarning hammasida taklif hisobga olinishi kerak —
+    odam chindan yangi va chindan taklif qilingan.
+    """
+
+    def setUp(self):
+        # `/auth/telegram/verify/` da 5/min throttle bor va DRF hisobni
+        # KESHDA saqlaydi — kesh esa testlar orasida tozalanmaydi. Tozalamasak
+        # ketma-ket testlar 429 olib, "taklif sanalmadi" deb YOLG'ON yiqiladi.
+        cache.clear()
+        make_plans()
+        self.inviter = make_user(1)
+
+    def _otp(self, telegram_id: int, code: str, ttl: int = 60) -> TelegramOTP:
+        return TelegramOTP.objects.create(
+            telegram_id=telegram_id, code=code, first_name="B",
+            expires_at=timezone.now() + timedelta(seconds=ttl),
+        )
+
+    def _verify(self, code: str):
+        from rest_framework.test import APIClient
+
+        return APIClient().post("/api/auth/telegram/verify/", {"code": code})
+
+    def test_invite_survives_an_expired_code(self):
+        """Havola bosildi -> kod eskirdi -> yangi kod -> kirish. Taklif qoladi."""
+        self.assertTrue(remember_pending_invite(2222, self.inviter.invite_code))
+        stale = self._otp(2222, "111111")
+        TelegramOTP.objects.filter(pk=stale.pk).update(
+            expires_at=timezone.now() - timedelta(seconds=5),
+            created_at=timezone.now() - timedelta(minutes=3),
+        )
+        TelegramOTP.purge_expired()   # bot yangi kod berayotganda shunday qiladi
+        self.assertTrue(PendingInvite.objects.filter(telegram_id=2222).exists())
+
+        self._otp(2222, "222222")
+        self.assertEqual(self._verify("222222").status_code, 200)
+        self.assertEqual(self.inviter.invited_count, 1)
+
+    def test_link_clicked_after_signing_up(self):
+        """Odam AVVAL o'zi kirdi, KEYIN havolani bosdi — baribir sanaladi.
+
+        Ilgari `remember_pending_invite` "akkaunt bor -> taklif emas" deb
+        rad etardi va taklif butunlay yo'qolardi.
+        """
+        self._otp(5555, "555555")
+        self.assertEqual(self._verify("555555").status_code, 200)
+        self.assertEqual(self.inviter.invited_count, 0)
+
+        self.assertTrue(remember_pending_invite(5555, self.inviter.invite_code))
+        self.assertEqual(self.inviter.invited_count, 1)
+
+    def test_pending_invite_saved_late_is_used_on_next_login(self):
+        """`PendingInvite` ro'yxatdan o'tgandan keyin paydo bo'lsa ham o'qiladi."""
+        self._otp(6666, "666666")
+        self._verify("666666")
+        PendingInvite.objects.create(telegram_id=6666, inviter=self.inviter)
+
+        self._otp(6666, "777777")
+        self._verify("777777")
+        self.assertEqual(self.inviter.invited_count, 1)
+
+    def test_old_account_still_not_counted(self):
+        """Xavfsizlik: eski akkaunt havolani bosib taklif bo'lib qololmaydi."""
+        self._otp(8888, "888888")
+        self._verify("888888")
+        User.objects.filter(telegram_id=8888).update(
+            date_joined=timezone.now() - timedelta(days=30),
+        )
+        self.assertFalse(remember_pending_invite(8888, self.inviter.invite_code))
+        self.assertEqual(self.inviter.invited_count, 0)
+
+    def test_no_double_count_when_link_clicked_twice(self):
+        """Xavfsizlik: qayta bosish ikkinchi marta sanamaydi."""
+        self.assertTrue(remember_pending_invite(9999, self.inviter.invite_code))
+        self._otp(9999, "999111")
+        self._verify("999111")
+        self.assertEqual(self.inviter.invited_count, 1)
+
+        # Endi qayta bosadi — va yana kiradi
+        self.assertFalse(remember_pending_invite(9999, self.inviter.invite_code))
+        self._otp(9999, "999222")
+        self._verify("999222")
+        self.assertEqual(self.inviter.invited_count, 1)
+
+    def test_second_inviter_cannot_steal_a_counted_invite(self):
+        other = make_user(2)
+        self.assertTrue(remember_pending_invite(4444, self.inviter.invite_code))
+        self._otp(4444, "444111")
+        self._verify("444111")
+        self.assertFalse(remember_pending_invite(4444, other.invite_code))
+        self.assertEqual(self.inviter.invited_count, 1)
+        self.assertEqual(other.invited_count, 0)
+
+
+class ProfileMustBeCompleteTests(TestCase):
+    """Taklif faqat odam RO'YXATDAN O'TIB BO'LGACH sanaladi.
+
+    Kod bilan kirishning o'zi yetarli emas — ism va daraja belgilanishi
+    kerak (foydalanuvchi talabi). Aks holda kimdir botga kirib, kod olibgina
+    kimningdir taklif hisobiga tushib qolardi.
+    """
+
+    def setUp(self):
+        cache.clear()
+        make_plans()
+        self.inviter = make_user(1)
+
+    def _verify(self, code):
+        from rest_framework.test import APIClient
+
+        return APIClient().post("/api/auth/telegram/verify/", {"code": code})
+
+    def test_not_counted_until_the_profile_is_filled(self):
+        self.assertTrue(remember_pending_invite(7777, self.inviter.invite_code))
+        # `first_name` BO'SH — ya'ni `display_name` to'lmaydi
+        TelegramOTP.objects.create(
+            telegram_id=7777, code="700700", first_name="",
+            expires_at=timezone.now() + timedelta(seconds=60),
+        )
+        res = self._verify("700700")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data["needs_setup"])
+        self.assertEqual(self.inviter.invited_count, 0)      # HALI sanalmaydi
+        self.assertTrue(PendingInvite.objects.filter(telegram_id=7777).exists())
+
+        # Profil to'ldiriladi — mana endi sanaladi
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+        setup = client.post("/api/auth/setup/", {"display_name": "Yangi", "cefr_level": "B1"})
+        self.assertEqual(setup.status_code, 200)
+        self.assertEqual(self.inviter.invited_count, 1)
+        self.assertFalse(PendingInvite.objects.filter(telegram_id=7777).exists())
+
+    def test_registered_with_a_name_counts_right_away(self):
+        """Telegram ismi bor bo'lsa profil darrov to'liq — taklif sanaladi."""
+        self.assertTrue(remember_pending_invite(8811, self.inviter.invite_code))
+        TelegramOTP.objects.create(
+            telegram_id=8811, code="881100", first_name="Aziz",
+            expires_at=timezone.now() + timedelta(seconds=60),
+        )
+        self._verify("881100")
+        self.assertEqual(self.inviter.invited_count, 1)

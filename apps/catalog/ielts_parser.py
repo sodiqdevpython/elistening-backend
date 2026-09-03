@@ -153,9 +153,37 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     display:inline-flex; align-items:center; gap:8px;
   }}
   .play-big:hover {{ filter:brightness(1.05); }}
-  .play-hint {{ color:#4338CA; font-size:12px; }}
-  .audio-time {{ margin-left:auto; color:var(--muted); font-size:13px;
-                 font-family:monospace; min-width:80px; text-align:right; }}
+  .play-hint {{ color:#4338CA; font-size:12px; margin:-10px 0 18px; padding-left:4px; }}
+  /* -10s / +10s — "ozgina orqaga / ozgina oldinga" uchun aniq tugmalar.
+     Panelni sudrash aniq pozitsiya uchun, bular esa tez tuzatish uchun. */
+  .skip-btn {{
+    background:#FFF; color:#1E3A8A; border:1px solid #C7D2FE; border-radius:8px;
+    padding:8px 10px; font-size:13px; font-weight:700; cursor:pointer;
+    white-space:nowrap; line-height:1;
+  }}
+  .skip-btn:hover {{ background:#EEF2FF; }}
+  .skip-btn:active {{ transform:translateY(1px); }}
+  /* Audio pozitsiya paneli (scrub) — foydalanuvchi istalgan joyga o'ta oladi.
+     Element BALAND (22px) bo'lib, chizig'i ingichka: shunda bosish/sudrash
+     maydoni katta bo'ladi. Ilgari butun element 6px edi va unga tegish
+     qiyin edi. */
+  .audio-seek {{ flex:1; min-width:140px; height:22px; -webkit-appearance:none;
+                 appearance:none; background:transparent; border-radius:999px;
+                 cursor:pointer; outline:none; margin:0; }}
+  .audio-seek::-webkit-slider-runnable-track {{ height:6px; border-radius:999px;
+                 background:#C7D2FE; }}
+  .audio-seek::-moz-range-track {{ height:6px; border-radius:999px;
+                 background:#C7D2FE; }}
+  .audio-seek::-webkit-slider-thumb {{ -webkit-appearance:none; appearance:none;
+                 width:16px; height:16px; border-radius:50%; margin-top:-5px;
+                 background:#2563EB; box-shadow:0 1px 4px rgba(37,99,235,.5);
+                 border:2px solid #fff; }}
+  .audio-seek::-moz-range-thumb {{ width:16px; height:16px; border-radius:50%;
+                 background:#2563EB; border:2px solid #fff; }}
+  .audio-seek:focus-visible {{ outline:2px solid #2563EB; outline-offset:3px; }}
+  .audio-time {{ color:var(--muted); font-size:13px;
+                 font-family:monospace; min-width:88px; text-align:right;
+                 white-space:nowrap; }}
 
   /* Part pastidagi navigatsiya paneli */
   .part-nav-bottom {{
@@ -182,19 +210,73 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <main>
   <section class="content">{parts_html}</section>
   <aside>
-    <h3>Question Palette</h3>
+    <h3 data-i18n="palette">Savollar ro'yxati</h3>
     <div id="palette">{palette_html}</div>
     <div class="actions">
-      <button class="btn" id="submit-btn" style="background:linear-gradient(135deg,#10B981,#059669);">
-        ✓ Tugatish va tekshirish
-      </button>
-      <button class="btn secondary" id="clear-btn">Clear all</button>
+      <button class="btn" id="submit-btn" data-i18n="finish"
+              style="background:linear-gradient(135deg,#10B981,#059669);">✓ Tugatish va tekshirish</button>
+      <button class="btn secondary" id="clear-btn" data-i18n="clearAll">Hammasini tozalash</button>
     </div>
   </aside>
 </main>
 
 <script>
 const TOTAL_QUESTIONS = {total_questions};
+
+/* ── Til (uz / en) ────────────────────────────────────────────────────────
+   Sahifa BAZADA saqlanadi, ya'ni uni til uchun qayta yasab bo'lmaydi. Shu
+   bois ikkala til ham shu yerda turadi va ota sahifa (React) joriy tilni
+   `postMessage({{type:'ielts:lang', lang}})` bilan yuboradi.
+   `data-i18n` bo'lgan har element matni almashadi; JS ichidagi matnlar esa
+   `T('kalit')` orqali olinadi. */
+const I18N = {{
+  uz: {{
+    palette: 'Savollar ro\\'yxati',
+    finish: '\\u2713 Tugatish va tekshirish',
+    clearAll: 'Hammasini tozalash',
+    clearConfirm: 'Hamma javob tozalansinmi?',
+    play: 'Audio boshlash',
+    pause: 'To\\'xtatish',
+    back10: '10 soniya orqaga (\\u2190)',
+    fwd10: '10 soniya oldinga (\\u2192)',
+    seekAria: 'Audio pozitsiyasi',
+    hint: 'Space \\u2014 play/pause \\u00b7 \\u2190 \\u2192 \\u2014 5 soniya orqaga/oldinga \\u00b7 panelni bosib yoki sudrab istalgan joyga o\\u2018ting',
+    noAudio: '\\u26a0 Bu part uchun audio topilmadi.',
+    prevPart: '\\u2190 Oldingi Part',
+    nextPart: 'Keyingi Part \\u2192',
+  }},
+  en: {{
+    palette: 'Question palette',
+    finish: '\\u2713 Finish and check',
+    clearAll: 'Clear all',
+    clearConfirm: 'Clear all answers?',
+    play: 'Play audio',
+    pause: 'Pause',
+    back10: '10 seconds back (\\u2190)',
+    fwd10: '10 seconds forward (\\u2192)',
+    seekAria: 'Audio position',
+    hint: 'Space \\u2014 play/pause \\u00b7 \\u2190 \\u2192 \\u2014 5 seconds back/forward \\u00b7 click or drag the bar to jump anywhere',
+    noAudio: '\\u26a0 No audio found for this part.',
+    prevPart: '\\u2190 Previous part',
+    nextPart: 'Next part \\u2192',
+  }},
+}};
+let LANG = 'uz';
+function T(key) {{ return (I18N[LANG] || I18N.uz)[key] || key; }}
+function applyLang(lang) {{
+  LANG = (lang === 'en') ? 'en' : 'uz';
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el => {{
+    el.textContent = T(el.dataset.i18n);
+  }});
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {{
+    el.title = T(el.dataset.i18nTitle);
+  }});
+  document.querySelectorAll('[data-i18n-aria]').forEach(el => {{
+    el.setAttribute('aria-label', T(el.dataset.i18nAria));
+  }});
+  updatePlayButtons();
+}}
 
 function switchPart(n) {{
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', +t.dataset.part === n));
@@ -236,28 +318,51 @@ function updatePlayButtons() {{
     const label = btn.querySelector('.play-label');
     if (audio && !audio.paused) {{
       if (icon) icon.textContent = '⏸';
-      if (label) label.textContent = 'To\\'xtatish';
+      if (label) label.textContent = T('pause');
     }} else {{
       if (icon) icon.textContent = '▶';
-      if (label) label.textContent = 'Audio boshlash';
+      if (label) label.textContent = T('play');
     }}
   }});
 }}
 document.querySelectorAll('.play-big').forEach(btn => {{
   btn.addEventListener('click', () => togglePlay());
 }});
+
+// -10s / +10s tugmalari va strelkalar uchun umumiy siljitish.
+function skipBy(delta) {{
+  const a = currentAudio();
+  if (!a || !isFinite(a.duration)) return;
+  a.currentTime = Math.max(0, Math.min(a.duration, a.currentTime + delta));
+}}
+document.querySelectorAll('.skip-btn').forEach(btn => {{
+  btn.addEventListener('click', () => skipBy(+btn.dataset.skip || 0));
+}});
 document.querySelectorAll('.part-audio').forEach(audio => {{
   const partNum = +audio.dataset.part;
   const timeEl = document.querySelector(`[data-time-for="${{partNum}}"]`);
+  const seekEl = document.querySelector(`.audio-seek[data-seek-for="${{partNum}}"]`);
+  let seeking = false;  // foydalanuvchi sudrab turganda timeupdate qadamni bosmasin
   audio.addEventListener('play', updatePlayButtons);
   audio.addEventListener('pause', updatePlayButtons);
   audio.addEventListener('ended', updatePlayButtons);
   audio.addEventListener('timeupdate', () => {{
     if (timeEl) timeEl.textContent = fmtTime(audio.currentTime) + ' / ' + fmtTime(audio.duration);
+    if (seekEl && !seeking && audio.duration) {{
+      seekEl.value = String(Math.round((audio.currentTime / audio.duration) * 1000));
+    }}
   }});
   audio.addEventListener('loadedmetadata', () => {{
     if (timeEl) timeEl.textContent = '0:00 / ' + fmtTime(audio.duration);
   }});
+  // Scrub — istalgan pozitsiyaga o'tish (input jarayonida darrov, tugagach ham).
+  if (seekEl) {{
+    const applySeek = () => {{
+      if (audio.duration) audio.currentTime = (seekEl.value / 1000) * audio.duration;
+    }};
+    seekEl.addEventListener('input', () => {{ seeking = true; applySeek(); }});
+    seekEl.addEventListener('change', () => {{ applySeek(); seeking = false; }});
+  }}
 }});
 
 // Space: input tashqarisida play/pause. Ctrl (yolg'iz) ham play/pause —
@@ -272,6 +377,13 @@ document.addEventListener('keydown', (e) => {{
   const inField = tag === 'input' || tag === 'textarea' || tag === 'select'
                   || e.target.isContentEditable;
   if (inField) return;
+  if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {{
+    // Panelning o'zi fokusda bo'lsa brauzerning tabiiy xulqi ishlasin.
+    if ((e.target.className || '').indexOf('audio-seek') !== -1) return;
+    e.preventDefault();
+    skipBy(e.code === 'ArrowLeft' ? -5 : 5);
+    return;
+  }}
   if (e.code === 'Space') {{
     e.preventDefault();
     togglePlay();
@@ -302,6 +414,10 @@ document.querySelectorAll('.palette-item').forEach(it =>
     }}
   }}));
 switchPart(1);
+applyLang(LANG);   // dastlabki matnlar (‘hint’ bo‘sh yozilgan)
+// Ota sahifa tilni bilgani zahoti yuboradi — lekin biz ham so‘raymiz
+// (iframe ota sahifadan oldin yuklanib qolishi mumkin).
+try {{ window.parent.postMessage({{ type: 'ielts:ready' }}, '*'); }} catch (e) {{}}
 
 document.querySelectorAll('input[type="checkbox"][data-limit]').forEach(cb =>
   cb.addEventListener('change', () => {{
@@ -426,7 +542,7 @@ document.getElementById('submit-btn').addEventListener('click', () => {{
   }}
 }});
 document.getElementById('clear-btn').addEventListener('click', () => {{
-  if (!confirm('Clear all answers?')) return;
+  if (!confirm(T('clearConfirm'))) return;
   document.querySelectorAll('input[type="text"]').forEach(i => i.value = '');
   document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(i => i.checked = false);
   document.querySelectorAll('.options-drop-zone.filled').forEach(clearZone);
@@ -436,6 +552,7 @@ document.getElementById('clear-btn').addEventListener('click', () => {{
 // Ota sahifa bilan aloqa:
 //   - 'ielts:reveal' — natija keldi, palette'ni rangli qilamiz
 //   - 'ielts:request-submit' — ota sahifa "Tugatish" bosgan, javoblarni yig'ib jo'natamiz
+//   - 'ielts:lang' — sayt tili o'zgardi (uz/en), sahifa matnlarini almashtiramiz
 window.addEventListener('message', (e) => {{
   const data = e.data || {{}};
   if (data.type === 'ielts:reveal') {{
@@ -447,6 +564,10 @@ window.addEventListener('message', (e) => {{
         item.style.color = '#fff';
       }}
     }});
+    return;
+  }}
+  if (data.type === 'ielts:lang') {{
+    applyLang(data.lang);
     return;
   }}
   if (data.type === 'ielts:request-submit') {{
@@ -602,8 +723,14 @@ def _extract_parts(soup: BeautifulSoup) -> list[dict]:
     return parts
 
 
-def _build_html(soup: BeautifulSoup, parts: list[dict]) -> tuple[str, int, str]:
-    title = soup.title.string.strip() if soup.title and soup.title.string else "IELTS Listening Test"
+def build_html(title: str, parts: list[dict]) -> tuple[str, int]:
+    """Partlardan standalone sahifa yasaydi. `(html, savollar_soni)`.
+
+    **Manba saytga murojaat qilmaydi** — kirish ma'lumoti faqat `parts`.
+    Shu bois plyer/dizayn yaxshilanganda eski testlarni ham qayta yasash
+    mumkin (`rebuild_html`), chunki `parts` bazada saqlanadi.
+    """
+    title = (title or "").strip() or "IELTS Listening Test"
 
     tabs_html = "".join(
         f'<button class="tab{" active" if p["num"] == 1 else ""}" '
@@ -621,35 +748,46 @@ def _build_html(soup: BeautifulSoup, parts: list[dict]) -> tuple[str, int, str]:
             audio_block = (
                 f'<div class="audio-toolbar">'
                 f'  <button type="button" class="play-big" data-target-part="{p["num"]}">'
-                f'    <span class="play-icon">▶</span><span class="play-label">Audio boshlash</span>'
+                f'    <span class="play-icon">▶</span>'
+                f'    <span class="play-label" data-i18n="play">Audio boshlash</span>'
                 f'  </button>'
-                f'  <div class="play-hint">Space bilan ham play/pause</div>'
+                f'  <button type="button" class="skip-btn" data-skip="-10" '
+                f'          data-target-part="{p["num"]}" data-i18n-title="back10">−10s</button>'
+                f'  <input type="range" class="audio-seek" data-seek-for="{p["num"]}" '
+                f'         min="0" max="1000" value="0" step="1" data-i18n-aria="seekAria">'
+                f'  <button type="button" class="skip-btn" data-skip="10" '
+                f'          data-target-part="{p["num"]}" data-i18n-title="fwd10">+10s</button>'
                 f'  <div class="audio-time" data-time-for="{p["num"]}">0:00 / 0:00</div>'
                 f'  <audio class="part-audio" data-part="{p["num"]}" '
                 f'         src="{p["audio"]}" preload="metadata"></audio>'
                 f'</div>'
+                f'<div class="play-hint" data-i18n="hint"></div>'
             )
         else:
             audio_block = (
                 '<div class="audio-toolbar" style="background:#FEF2F2;border-color:#FCA5A5;">'
-                '<div style="color:#991B1B;font-weight:700;">⚠ Bu part uchun audio topilmadi.</div>'
+                '<div style="color:#991B1B;font-weight:700;" data-i18n="noAudio">'
+                '⚠ Bu part uchun audio topilmadi.</div>'
                 '</div>'
             )
         # Part pastidagi navigatsiya
         nav_buttons = []
         if idx > 0:
             nav_buttons.append(
-                f'<button type="button" class="btn-prev" data-goto-part="{parts[idx-1]["num"]}">← Oldingi Part</button>'
+                f'<button type="button" class="btn-prev" data-i18n="prevPart" '
+                f'        data-goto-part="{parts[idx-1]["num"]}">← Oldingi Part</button>'
             )
         else:
             nav_buttons.append('<span></span>')  # spacing
         if idx < total_parts - 1:
             nav_buttons.append(
-                f'<button type="button" class="btn-next" data-goto-part="{parts[idx+1]["num"]}">Keyingi Part →</button>'
+                f'<button type="button" class="btn-next" data-i18n="nextPart" '
+                f'        data-goto-part="{parts[idx+1]["num"]}">Keyingi Part →</button>'
             )
         else:
             nav_buttons.append(
-                '<button type="button" class="btn-finish" id="finish-btn-inline">✓ Tugatish va tekshirish</button>'
+                '<button type="button" class="btn-finish" id="finish-btn-inline" data-i18n="finish">'
+                '✓ Tugatish va tekshirish</button>'
             )
         nav_block = f'<div class="part-nav-bottom">{"".join(nav_buttons)}</div>'
 
@@ -677,12 +815,18 @@ def _build_html(soup: BeautifulSoup, parts: list[dict]) -> tuple[str, int, str]:
         palette_html=palette_html,
         total_questions=total,
     )
-    return html, total, title
+    return html, total
 
 
 def parse_test(url: str) -> dict:
-    """`{"title", "html", "total_questions"}` qaytaradi. Xato bo'lsa
-    `IeltsParseError` ko'tariladi (worker uni user-facing xatoga aylantiradi)."""
+    """`{"title", "html", "total_questions", "parts"}` qaytaradi.
+
+    `parts` ham qaytariladi va bazada saqlanadi (`IeltsListeningTest.parts_json`)
+    — shu bois keyinchalik plyer yaxshilanganda sahifani manba saytga qayta
+    murojaat qilmasdan yangilash mumkin (`rebuild_html`).
+
+    Xato bo'lsa `IeltsParseError` (worker uni user-facing xatoga aylantiradi).
+    """
     soup = _fetch(url)
     parts = _extract_parts(soup)
     if not parts:
@@ -690,7 +834,113 @@ def parse_test(url: str) -> dict:
             "Sahifada `.ielts-listening-question-section` topilmadi — URL "
             "engnovate.com testi bo'lishi kerak."
         )
-    html, total, title = _build_html(soup, parts)
+    title = soup.title.string.strip() if soup.title and soup.title.string else ""
+    html, total = build_html(title, parts)
     if total == 0:
         raise IeltsParseError("Savollar topilmadi (0 ta) — sahifa noto'g'ri.")
-    return {"html": html, "title": title, "total_questions": total}
+    return {"html": html, "title": title or "IELTS Listening Test",
+            "total_questions": total, "parts": parts}
+
+
+def parts_from_rendered(html: str) -> list[dict]:
+    """Partlarni BIZNING O'ZIMIZ yasagan sahifadan qayta ajratib oladi.
+
+    **Nega kerak:** `parts_json` maydoni keyin qo'shilgan, ya'ni undan oldin
+    parse qilingan testlarda u bo'sh. Lekin ularning saqlangan `html` ida
+    hamma narsa bor — audio havolasi, savollar va raqamlari. Demak manba
+    saytga (engnovate.com) qayta murojaat qilish SHART EMAS: sahifani o'zidan
+    o'qib olamiz.
+
+    Bu eng ishonchli yo'l: tarmoq kerak emas, manba sayt o'chib ketgan yoki
+    o'zgargan bo'lsa ham ishlaydi.
+
+    O'z "bezagimiz" (sarlavha, audio paneli, pastki navigatsiya) tashlab
+    yuboriladi — ular shablon tomonidan qaytadan yasaladi.
+    """
+    if not html:
+        return []
+    soup = BeautifulSoup(html, "html.parser")
+    parts: list[dict] = []
+
+    for el in soup.select(".part[data-part]"):
+        try:
+            num = int(el.get("data-part"))
+        except (TypeError, ValueError):
+            continue
+
+        audio_el = el.select_one("audio.part-audio")
+        audio = (audio_el.get("src") or "") if audio_el else ""
+
+        # Shablon qo'shgan qismlarni olib tashlaymiz — qolgani asl savollar.
+        body = BeautifulSoup(str(el), "html.parser")
+        for junk in body.select(".audio-toolbar, .part-nav-bottom"):
+            junk.decompose()
+        root = body.select_one(".part[data-part]") or body
+        for h2 in root.find_all("h2", recursive=False):
+            h2.decompose()
+
+        numbers = sorted({
+            int(n.get_text(strip=True))
+            for n in root.select(".ielts-listening-question-number")
+            if n.get_text(strip=True).isdigit()
+        })
+
+        parts.append({
+            "num": num,
+            "questions": numbers,
+            "html": root.decode_contents(),
+            "audio": audio,
+        })
+
+    return parts
+
+
+def rebuild_html(test) -> str:
+    """Mavjud testning HTML sini JORIY shablon bilan qayta yasaydi.
+
+    **Nega kerak:** `html` bazada parse paytida qotib qoladi. Plyerga yangi
+    imkoniyat qo'shilsa (masalan audio pozitsiyasini surish paneli) eski
+    testlar undan bexabar qoladi — foydalanuvchi "surish yo'q" deb ko'rgan
+    muammo aynan shu edi.
+
+    Manba tartibi (tezdan sekinga, tarmoqsizdan tarmoqliga):
+
+    1. `parts_json` — parse paytida saqlangan xom partlar;
+    2. **saqlangan `html` ning o'zi** — undan partlarni qayta ajratamiz
+       (`parts_from_rendered`). Eski yozuvlar shu yo'l bilan tuzatiladi va
+       TARMOQ KERAK EMAS;
+    3. `source_url` — faqat yuqoridagi ikkalasi ham bo'lmasa.
+
+    Har qanday holatda `parts_json` to'ldiriladi, ya'ni keyingi safar 1-yo'l
+    ishlaydi. Qaysi manbadan foydalanilgani QAYTARILADI (bo'sh satr = xato) —
+    komanda shuni ko'rsatadi. Savollar/javoblar TEGILMAYDI.
+    """
+    fields = ["html", "updated_at"]
+    parts = test.parts_json or []
+    source = "parts_json"
+
+    if not parts:
+        parts = parts_from_rendered(test.html or "")
+        source = "saqlangan sahifa"
+
+    if not parts:
+        result = parse_test(test.source_url)
+        test.parts_json = result["parts"]
+        test.html = result["html"]
+        test.total_questions = result["total_questions"]
+        test.save(update_fields=fields + ["parts_json", "total_questions"])
+        return "manba sahifa (tarmoq)"
+
+    html, total = build_html(test.title, parts)
+    if not html:
+        return ""
+    test.html = html
+    # Keyingi safar 1-yo'l (eng tez) ishlashi uchun xom partlarni saqlaymiz.
+    if source != "parts_json":
+        test.parts_json = parts
+        fields.append("parts_json")
+    if total:
+        test.total_questions = total
+        fields.append("total_questions")
+    test.save(update_fields=fields)
+    return source

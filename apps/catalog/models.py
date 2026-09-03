@@ -1027,6 +1027,13 @@ class IeltsListeningTest(TimeStampedModel):
         help_text="Parser tayyorlagan to'liq sahifa (audio + savollar). "
                   "Sayt iframe srcdoc ichida ko'rsatadi.",
     )
+    parts_json = models.JSONField(
+        "Partlar (xom)", default=list, blank=True,
+        help_text="Parser ajratib olgan partlar: audio havolasi, savollar HTML'i "
+                  "va savol raqamlari. HTML shundan yasaladi — shu bois plyer "
+                  "yaxshilanganda manba saytga QAYTA MUROJAAT QILMASDAN "
+                  "sahifani qayta yasash mumkin (`manage.py rebuild_ielts_html`).",
+    )
     total_questions = models.PositiveSmallIntegerField(
         "Savollar soni", default=40,
         help_text="Parser aniqlaydi. Standart IELTS Listening — 40 ta.",
@@ -1097,3 +1104,40 @@ class IeltsListeningTest(TimeStampedModel):
             self.status == self.Status.PARSED
             or self.status == self.Status.READY
         ) and self.answered_count >= (self.total_questions or 0) and (self.total_questions or 0) > 0
+
+
+class IeltsListeningTestResult(TimeStampedModel):
+    """Foydalanuvchining IELTS testdagi natijasi — HAR (user, test) uchun BITTA
+    (oxirgi topshiriq). Qayta topshirsa yangilanadi (`update_or_create`), shu
+    bois "oldingi natija" doim oxirgisi bo'ladi va tarix shishmaydi.
+
+    Profil/ro'yxatdagi "bajarilgan" belgisi va test sahifasiga qaytilganda
+    ko'rsatiladigan natija shu jadvaldan olinadi. `results_json` — savol-savol
+    to'g'ri/xato (`{"1": true, "2": false, ...}`), qayta ochilganda javoblar
+    yashil/qizil bo'lib tiklanadi.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="ielts_results", verbose_name="Foydalanuvchi",
+    )
+    test = models.ForeignKey(
+        IeltsListeningTest, on_delete=models.CASCADE,
+        related_name="results", verbose_name="Test",
+    )
+    score = models.PositiveSmallIntegerField("Ball", default=0)
+    total = models.PositiveSmallIntegerField("Jami savol", default=0)
+    results_json = models.JSONField(
+        "Savol natijalari", default=dict, blank=True,
+        help_text='{"1": true, "2": false, ...}',
+    )
+
+    class Meta:
+        verbose_name = "IELTS natija"
+        verbose_name_plural = "IELTS natijalar"
+        unique_together = ("user", "test")
+        ordering = ["-updated_at"]
+        indexes = [models.Index(fields=["user", "test"])]
+
+    def __str__(self):
+        return f"{self.user_id} · {self.test_id} — {self.score}/{self.total}"

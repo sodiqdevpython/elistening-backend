@@ -51,24 +51,33 @@ def site_config(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def app_ad(request):
-    """Mobil ilova ochilganda ko'rsatiladigan FAOL reklama (bitta).
+    """Ilova VA sayt ochilganda ko'rsatiladigan FAOL reklama (bitta).
 
-    Reklama bo'lmasa `{"ad": null}`. Rasm URL'i mutlaq (mobil ilova to'g'ridan
-    ochadi). Keshlanmaydi — admin yoqishi bilan darrov chiqsin.
+    Reklama bo'lmasa `{"ad": null}`. Rasm URL'lari mutlaq (mijoz to'g'ridan
+    ochadi): `image_url` — mobil, `image_web_url` — sayt uchun (bo'sh
+    bo'lsa mobil rasmga qaytadi). Keshlanmaydi — admin yoqishi bilan
+    darrov chiqsin.
     """
     from apps.common.models import AppAd
     ad = AppAd.objects.filter(is_active=True).order_by("-created_at").first()
     if ad is None:
         return Response({"ad": None})
-    image_url = ""
-    if ad.image:
+    def absolute(field):
+        if not field:
+            return ""
         try:
-            image_url = request.build_absolute_uri(ad.image.url)
+            return request.build_absolute_uri(field.url)
         except Exception:
-            image_url = ad.image.url
+            return field.url
+
+    image_url = absolute(ad.image)
+    # Sayt rasmi bo'sh bo'lsa mobil rasmga qaytamiz — admin bitta rasm
+    # bersa ham reklama ikkala joyda ishlaydi.
+    image_web_url = absolute(ad.image_web) or image_url
     return Response({"ad": {
         "id": ad.id,
         "image_url": image_url,
+        "image_web_url": image_web_url,
         "title": ad.title or "",
         "body": ad.body or "",
         "link_url": ad.link_url or "",

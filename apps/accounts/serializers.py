@@ -37,9 +37,14 @@ class MeSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
     plan = serializers.SerializerMethodField()
     today_seconds = serializers.SerializerMethodField()
-    # Taklif hisobi: `invited_count` — JAMI olib kelgan odam, 
+    # Taklif hisobi: `invited_count` — JAMI olib kelgan odam,
     # `invites_to_next_reward` — keyingi sovg'agacha qolgani.
-    invites_to_next_reward = serializers.IntegerField(read_only=True)
+    #
+    # Ikkalasi ham AYNI raqamdan chiqadi, shu bois u bir marta hisoblanadi.
+    # Ilgari ikkita alohida property edi va har `GET /api/me/` da bir xil
+    # COUNT ikki marta ketardi.
+    invited_count = serializers.SerializerMethodField()
+    invites_to_next_reward = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -76,11 +81,33 @@ class MeSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         return request.build_absolute_uri(obj.avatar.url) if request else obj.avatar.url
 
+    def _invited_total(self, obj) -> int:
+        """Jami taklif — bitta so'rov, serializer umri davomida eslab qolinadi."""
+        if not hasattr(self, "_invited_cache"):
+            self._invited_cache = {}
+        if obj.pk not in self._invited_cache:
+            self._invited_cache[obj.pk] = obj.invited_count
+        return self._invited_cache[obj.pk]
+
+    def get_invited_count(self, obj) -> int:
+        return self._invited_total(obj)
+
+    def get_invites_to_next_reward(self, obj) -> int:
+        from apps.billing.rewards import next_reward
+
+        return next_reward(self._invited_total(obj))[2]
+
     def get_plan(self, obj):
-        subscription = obj.subscriptions.select_related("plan").first()
-        if subscription and subscription.is_active:
-            return subscription.plan.code
-        return "free"
+        """Joriy tarif kodi — KESHLANGAN manbadan.
+
+        Ilgari bu yerda alohida `subscriptions` so'rovi bor edi va u
+        `GET /api/me/` har chaqirilganda takrorlanardi. Endi limit
+        tizimidagi bilan bir xil (keshlangan) manbadan olinadi.
+        """
+        from apps.billing.limits import get_user_plan
+
+        plan = get_user_plan(obj)
+        return plan.code if plan else "free"
 
     def get_today_seconds(self, obj) -> int:
         from django.utils import timezone

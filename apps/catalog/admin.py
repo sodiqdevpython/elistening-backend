@@ -1327,7 +1327,7 @@ class IeltsListeningTestAdmin(BaseModelAdmin):
     readonly_fields = ("status", "parse_error",
                        "views", "created_at", "updated_at")
     change_form_template = "admin/catalog/ieltslisteningtest/change_form.html"
-    actions = ("action_publish", "action_unpublish", "action_reparse")
+    actions = ("action_publish", "action_unpublish", "action_rebuild_html", "action_reparse")
 
     def get_form(self, request, obj=None, **kwargs):
         if obj is None:
@@ -1406,6 +1406,35 @@ class IeltsListeningTestAdmin(BaseModelAdmin):
         self.message_user(request, f"{n} ta test yashirildi.")
 
     @admin.action(description="↻ Qayta parse (HTML ni qayta olish)")
+    @admin.action(description="🔄 Sahifani qayta yasash (plyerni yangilash)")
+    def action_rebuild_html(self, request, queryset):
+        """HTML ni JORIY shablon bilan qayta yasaydi.
+
+        `html` bazada parse paytida qotib qoladi, ya'ni plyerga qo'shilgan
+        yangilik (masalan audio pozitsiyasini surish paneli) eski testlarga
+        yetib bormaydi. Bu amal aynan shuni tuzatadi.
+
+        `parts_json` bor bo'lsa TARMOQQA CHIQMAYDI (tez). Bo'lmasa manba
+        sahifa bir marta qayta olinadi. Savollar va javoblar tegilmaydi.
+        """
+        from .ielts_parser import rebuild_html
+
+        ok = failed = 0
+        for obj in queryset:
+            try:
+                if rebuild_html(obj):
+                    ok += 1
+                else:
+                    failed += 1
+            except Exception as exc:
+                failed += 1
+                self.message_user(request, f"#{obj.pk}: {exc}", level=messages.ERROR)
+        self.message_user(
+            request,
+            f"🔄 {ok} ta sahifa qayta yasaldi"
+            + (f", {failed} tasida xato." if failed else "."),
+        )
+
     def action_reparse(self, request, queryset):
         from .ai_worker import dispatch_job, enqueue_ielts_parse
         n = 0

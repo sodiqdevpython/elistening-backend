@@ -191,6 +191,9 @@ def _run_ielts_parse(object_id: int) -> None:
         return
     test.html = result["html"]
     test.total_questions = result["total_questions"]
+    # Xom partlar ham saqlanadi — plyer yaxshilanganda sahifani manba saytga
+    # qayta murojaat qilmasdan yangilash uchun (`ielts_parser.rebuild_html`).
+    test.parts_json = result.get("parts") or []
     # Sarlavha bo'sh bo'lsa parser natijasidan olamiz — admin qo'lda o'zgartirsa
     # `title` bo'sh qolmagan bo'ladi, uni buzmaymiz.
     if not (test.title or "").strip():
@@ -198,7 +201,8 @@ def _run_ielts_parse(object_id: int) -> None:
     test.status = IeltsListeningTest.Status.PARSED
     test.parse_error = ""
     test.save(update_fields=[
-        "html", "total_questions", "title", "status", "parse_error", "updated_at",
+        "html", "parts_json", "total_questions", "title", "status", "parse_error",
+        "updated_at",
     ])
 
 

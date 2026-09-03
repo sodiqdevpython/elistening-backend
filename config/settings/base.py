@@ -245,6 +245,20 @@ TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN")
 TELEGRAM_BOT_USERNAME = env("TELEGRAM_BOT_USERNAME")
 SITE_URL = env("SITE_URL")
 
+# --- Kontent himoyasi (obfuskatsiya) --------------------------------------
+# Transkript va savollar javobda "o'ralgan" holda ketadi (`apps/common/protect.py`).
+# Bu SHIFRLASH EMAS: kalit mijozga baribir yetadi. Maqsad - `curl` bilan
+# JSON'ni olib ketishni ma'nosiz qilish. Mijozlarda AYNAN shu parol turishi
+# shart: frontend `VITE_CONTENT_SECRET`, mobil `EXPO_PUBLIC_CONTENT_SECRET`.
+# Testlar: har testdan oldin kesh tozalanadi. Django bazani rollback qiladi,
+# lekin KESHGA tegmaydi — kalitlar esa `user.pk` ga bog'langan, pk'lar esa
+# har testda 1 dan boshlanadi. Natijada bir test boshqasining tarifini/
+# throttle hisobini ko'rib, YOLG'ON yiqilardi. Batafsil: `apps/common/testing.py`.
+TEST_RUNNER = "apps.common.testing.CacheIsolatedRunner"
+
+CONTENT_SECRET = env("CONTENT_SECRET", default="sodiq2005.py")
+PROTECT_CONTENT = env.bool("PROTECT_CONTENT", default=True)
+
 # AI transkripsiya (OpenAI Whisper)
 GPT_API_KEY = env("GPT_API_KEY")
 CLAUDE_API_KEY = env("CLAUDE_API_KEY")   # kelajakda Haiku uchun

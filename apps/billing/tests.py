@@ -160,9 +160,16 @@ class LimitNotifyTests(TestCase):
         self.assertEqual(BotMessage.objects.filter(user=other).count(), 0)
 
     def test_consume_blocks_after_limit(self):
-        from apps.billing.limits import consume
+        """`consume` endi SNAPSHOT emas, TARIF qaytaradi.
+
+        Snapshot faqat 403 javobini yasashda kerak, shu bois u
+        `enforce_or_response` ga ko'chirildi — ruxsat berilgan oddiy yo'lda
+        4 ta ortiqcha COUNT ketmaydi (`limits.consume` izohiga qarang).
+        """
+        from apps.billing.limits import consume, snapshot
 
         self.assertTrue(consume(self.user, "shorts", 1)[0])
-        allowed, snap = consume(self.user, "shorts", 2)
+        allowed, plan = consume(self.user, "shorts", 2)
         self.assertFalse(allowed)
-        self.assertEqual(snap["limits"]["shorts"]["remaining"], 0)
+        self.assertEqual(plan.code, "free")
+        self.assertEqual(snapshot(self.user, plan)["limits"]["shorts"]["remaining"], 0)

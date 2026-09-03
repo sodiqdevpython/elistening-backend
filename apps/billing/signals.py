@@ -23,11 +23,11 @@ Telegram xabari yuborilmaydi (lekin tarix baribir yoziladi):
 from html import escape
 
 from django.db import transaction
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import Reason, Subscription, SubscriptionEvent
+from .models import Plan, Reason, Subscription, SubscriptionEvent
 
 # `pre_save` da eski holatni eslab qolamiz — `post_save` da nima o'zgarganini
 # bilish uchun (Django o'zi "oldingi qiymat" ni bermaydi).
@@ -148,3 +148,29 @@ def log_and_notify(sender, instance: Subscription, created: bool, **kwargs):
 
     # Obuna CHINDAN saqlangach yuboriladi — rollback bo'lsa xabar ham ketmaydi.
     transaction.on_commit(_queue)
+
+
+# ── Kesh tozalash ─────────────────────────────────────────────────────────
+# Tariflar keshlanadi (`limits._plans_by_id`, `views.PLANS_CACHE_KEY`) chunki
+# ular deyarli o'zgarmaydi, lekin HAR limit tekshiruvida o'qiladi. Admin
+# jadvalni o'zgartirsa kesh darrov tozalanishi shart — aks holda yangi
+# limitlar 5 daqiqagacha kuchga kirmasdi.
+
+
+@receiver([post_save, post_delete], sender=Plan)
+def _clear_plan_caches(sender, **kwargs):
+    from django.core.cache import cache
+
+    from .limits import forget_plans
+    from .views import PLANS_CACHE_KEY
+
+    forget_plans()
+    cache.delete(PLANS_CACHE_KEY)
+
+
+@receiver([post_save, post_delete], sender=Subscription)
+def _clear_user_plan_cache(sender, instance: Subscription, **kwargs):
+    """Obuna o'zgarsa (admin qo'lda ham) o'sha foydalanuvchining keshi ketadi."""
+    from .limits import forget_user_plan
+
+    forget_user_plan(instance.user_id)

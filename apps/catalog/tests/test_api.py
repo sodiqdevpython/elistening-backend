@@ -54,10 +54,21 @@ class ListingTests(ApiTestCase):
         self.assertIn("chunks_count", row)
 
     def test_detail_includes_body(self):
+        """Detail'da body BOR, lekin `enc` ichida — mijoz uni o'zi ochadi.
+
+        Transkript va savollar javobga o'ralgan holda tushadi
+        (`apps/common/protect.py`): `curl` bilan olib ketish ma'nosiz bo'lsin.
+        Testlar shu bois `unprotect` orqali qaraydi — mijoz kodi ham AYNAN
+        shuni qiladi (`frontend/src/utils/protect.ts`).
+        """
+        from apps.common.protect import unprotect
+
         response = self.client.get(f"/api/dictations/{self.dictation.slug}/")
         data = response.json()
-        self.assertEqual(len(data["body"]), 2)
-        self.assertEqual(data["body"][0]["text"], "Hello there.")
+        self.assertNotIn("body", data)      # ochiq holda YO'Q
+        body = unprotect(data["enc"])["body"]
+        self.assertEqual(len(body), 2)
+        self.assertEqual(body[0]["text"], "Hello there.")
 
     def test_detail_increments_views(self):
         self.assertEqual(self.dictation.views, 0)
