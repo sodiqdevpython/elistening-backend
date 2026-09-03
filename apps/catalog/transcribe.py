@@ -33,6 +33,14 @@ class TranscriptionError(Exception):
     """Ko'rinadigan xato — admin xabarnomasiga chiqadi."""
 
 
+class ParserUnavailable(Exception):
+    """Uy PC'dagi parser xizmatiga ulanib bo'lmadi (PC o'chiq / tunnel yo'q).
+
+    Bu VAQTINCHALIK xato — worker job'ni `pending`'da qoldiradi va attempts'ni
+    hisoblamaydi, ya'ni PC yonganda keyingi beat-sweep avtomatik davom etadi.
+    """
+
+
 def measure_audio_duration(path: str | Path) -> int:
     """Audio faylning davomiyligini soniyada qaytaradi (mutagen)."""
     from mutagen import File as MutagenFile
@@ -187,22 +195,73 @@ def fetch_youtube_title(url: str) -> str:
         return ""
 
 
+def _fetch_from_parser(url: str, parser_url: str, tmp_dir: str) -> str:
+    """Uy PC'dagi parser xizmatidan (residential IP) audio oladi.
+
+    VPS (data-markaz IP) YouTube tomonidan bloklanadi ("Sign in to confirm
+    you're not a bot"); parser esa uy internetidan bemalol yuklaydi. Ulanib
+    bo'lmasa `ParserUnavailable` (worker qayta uradi), parserning O'ZI xato
+    bersa (private video va h.k.) `TranscriptionError`.
+    """
+    import requests
+
+    token = (os.environ.get("PARSER_TOKEN") or "").strip()
+    headers = {"X-Parser-Token": token} if token else {}
+    try:
+        resp = requests.get(
+            f"{parser_url}/audio", params={"url": url}, headers=headers,
+            stream=True, timeout=(10, 600),
+        )
+    except requests.RequestException as exc:
+        # Ulanish/timeout — PC o'chiq yoki tunnel yo'q → vaqtinchalik.
+        raise ParserUnavailable(f"Parser'ga ulanib bo'lmadi: {exc}") from exc
+
+    if resp.status_code in (502, 503, 504):
+        # jprq tunnel tirik, lekin orqadagi PC javob bermayapti → vaqtinchalik.
+        raise ParserUnavailable(f"Parser javob bermadi ({resp.status_code}) — PC o'chiq bo'lishi mumkin.")
+    if resp.status_code == 401:
+        raise TranscriptionError("Parser token noto'g'ri (PARSER_TOKEN mos emas).")
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.text[:300]
+        except Exception:
+            pass
+        raise TranscriptionError(f"Parser audio bermadi ({resp.status_code}): {detail}")
+
+    path = os.path.join(tmp_dir, "audio.mp3")
+    with open(path, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=65536):
+            if chunk:
+                f.write(chunk)
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        raise TranscriptionError("Parser bo'sh audio qaytardi.")
+    return path
+
+
 @contextmanager
 def _download_youtube_audio(url: str):
-    """yt-dlp orqali YouTube'dan mp3 audio yuklab oladi (vaqtinchalik).
+    """YouTube'dan mp3 audio yuklab oladi (vaqtinchalik).
 
-    Kontekst tugashi bilan hamma fayllar o'chiriladi — asosiy DB'ga
-    yozilmaydi, media/'ga saqlanmaydi. Whisper'ga faqat vaqtinchalik path.
+    `PARSER_URL` berilgan bo'lsa — yuklashni uy PC'dagi parser xizmatiga
+    topshiradi (VPS IP bloklangani uchun). Aks holda yt-dlp'ni O'ZI ishlatadi.
+    Kontekst tugashi bilan hamma fayllar o'chiriladi — media/'ga saqlanmaydi.
     """
-    try:
-        import yt_dlp
-    except ImportError as exc:
-        raise TranscriptionError(
-            "yt-dlp o'rnatilmagan. `pip install yt-dlp` qiling."
-        ) from exc
-
     tmp_dir = tempfile.mkdtemp(prefix="whisper-yt-")
     try:
+        parser_url = (os.environ.get("PARSER_URL") or "").strip().rstrip("/")
+        if parser_url:
+            # Yuklash uy PC'da (residential IP) — VPS'da yt-dlp umuman ishlamaydi.
+            yield _fetch_from_parser(url, parser_url, tmp_dir)
+            return
+
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            raise TranscriptionError(
+                "yt-dlp o'rnatilmagan. `pip install yt-dlp` qiling."
+            ) from exc
+
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": os.path.join(tmp_dir, "audio.%(ext)s"),

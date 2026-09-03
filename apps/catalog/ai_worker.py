@@ -248,6 +248,7 @@ def _execute_job(job) -> None:
     Xato bo'lsa MAX_ATTEMPTS gacha qayta `pending` qiladi. Dictation whisper
     tugagach Haiku bosqichini navbatga qo'yadi va (celery rejimida) jo'natadi."""
     from .models import AIJob
+    from .transcribe import ParserUnavailable
     try:
         if job.kind == AIJob.Kind.SHORT and job.step == AIJob.Step.WHISPER:
             # Short pipeline'i whisper+haiku ikkalasini bir marta qiladi.
@@ -270,6 +271,17 @@ def _execute_job(job) -> None:
             _finish_ok(job)
         else:
             _finish_fail(job, f"Noma'lum job turi: {job.kind}/{job.step}")
+    except ParserUnavailable as exc:
+        # Uy PC'dagi parser o'chiq/ulanmadi — VAQTINCHALIK. Job'ni pending'da
+        # qoldiramiz va attempts'ni HISOBLAMAYMIZ (attempt -1) — ya'ni PC
+        # yonguncha cheksiz kutadi, keyingi beat-sweep avtomatik davom etadi.
+        logger.warning("Parser unavailable — job pending'da qoladi: %s (%s)", job, exc)
+        AIJob.objects.filter(pk=job.pk).update(
+            status=AIJob.Status.PENDING,
+            error="Uy kompyuteri (parser) javob bermadi — yoqilganda avtomatik davom etadi.",
+            started_at=None,
+            attempts=max(0, job.attempts - 1),
+        )
     except Exception as exc:
         logger.exception("AI job failed: %s", job)
         # MAX_ATTEMPTS gacha qayta urinamiz — pending'ga qaytaramiz (thread
