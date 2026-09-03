@@ -214,7 +214,22 @@ def _download_youtube_audio(url: str):
                 "preferredquality": "128",
             }],
             "noplaylist": True,
+            # VPS (data-markaz IP) dan YouTube standart `web` mijozini bloklaydi
+            # → "HTTP Error 403: Forbidden". Boshqa mijozlarni navbat bilan
+            # sinaymiz (tv/web_safari/mweb/... ko'pincha 403'ni chetlab o'tadi).
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv", "web_safari", "mweb", "android", "ios", "web"],
+                },
+            },
+            "retries": 3,
+            "fragment_retries": 3,
         }
+        # Agar player_client ham yordam bermasa — cookie fayl (eng ishonchli).
+        # `YTDLP_COOKIES=/app/cookies.txt` env berilsa va fayl mavjud bo'lsa ishlatiladi.
+        _cookies = (os.environ.get("YTDLP_COOKIES") or "").strip()
+        if _cookies and os.path.exists(_cookies):
+            ydl_opts["cookiefile"] = _cookies
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
