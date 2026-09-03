@@ -83,17 +83,21 @@ class TelegramVerifyView(APIView):
                 "user": MeSerializer(user, context={"request": request}).data,
             })
 
-        # ── Captcha (hCaptcha) — HAQIQIY foydalanuvchilar uchun MAJBURIY ──
-        #    Test kodlari yuqorida qaytib ketdi (ular captchasiz). Secret bo'sh
-        #    bo'lsa (lokal) captcha o'chiq — `verify_captcha` doim True.
-        from .captcha import verify_captcha
-        token = str(request.data.get("captcha_token") or "").strip()
-        if not verify_captcha(token, client_ip(request)):
-            return Response(
-                {"error": {"code": "captcha_failed",
-                           "message": "Captcha tasdiqlanmadi. Qayta urinib ko'ring."}},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # ── Captcha (hCaptcha) — FAQAT WEB uchun ──
+        #    Mobil ilova captcha ko'rsatmaydi (u yerda kerak emas), shu bois
+        #    `X-Platform: mobile` bo'lsa captcha O'TKAZIB YUBORILADI. Test
+        #    kodlari ham yuqorida captchasiz qaytdi. Secret bo'sh bo'lsa
+        #    (lokal) captcha umuman o'chiq.
+        platform = (request.headers.get("X-Platform") or "").lower()
+        if platform != "mobile":
+            from .captcha import verify_captcha
+            token = str(request.data.get("captcha_token") or "").strip()
+            if not verify_captcha(token, client_ip(request)):
+                return Response(
+                    {"error": {"code": "captcha_failed",
+                               "message": "Captcha tasdiqlanmadi. Qayta urinib ko'ring."}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # Kerak bo'lmay qolgan kodlarni shu yerda tozalaymiz (cron kerak emas):
         # kod 1 daqiqa yashaydi, muddati o'tgani jadvalda turishining foydasi yo'q.
