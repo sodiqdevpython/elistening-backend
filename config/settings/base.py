@@ -18,12 +18,21 @@ env = environ.Env(
     SITE_URL=(str, "http://192.168.1.178:5173"),
     GPT_API_KEY=(str, ""),
     CLAUDE_API_KEY=(str, ""),
+    HCAPTCHA_SECRET=(str, ""),
+    HCAPTCHA_SITEKEY=(str, ""),
+    # Prod domen(lar)i — CSRF/CORS ro'yxatiga qo'shiladi. Masalan:
+    # EXTRA_ORIGINS=https://listening.uz,https://www.listening.uz
+    EXTRA_ORIGINS=(list, []),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+
+# hCaptcha — login (OTP verify) uchun. Secret bo'sh bo'lsa captcha O'CHIQ.
+HCAPTCHA_SECRET = env("HCAPTCHA_SECRET")
+HCAPTCHA_SITEKEY = env("HCAPTCHA_SITEKEY")
 
 # Doimiy TEST akkauntlar — bu kodlar kiritilsa har doim mos akkauntga kiradi
 # (bot kodisiz). Har biri o'z tarifida. Bot generatori bu kodlarni HECH QACHON
@@ -199,8 +208,11 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = env("CORS_ALLOW_ALL")
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://192.168.1.178:5173", "https://sodiqdevpython.jprq.live"]
-CSRF_TRUSTED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://192.168.1.178:5173", "https://sodiqdevpython.jprq.live"]
+# Prod domen(lar)i `EXTRA_ORIGINS` env orqali qo'shiladi (masalan
+# https://listening.uz) — admin/login HTTPS'da CSRF xatosiz ishlashi uchun SHART.
+_BASE_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://192.168.1.178:5173", "https://sodiqdevpython.jprq.live"]
+CORS_ALLOWED_ORIGINS = _BASE_ORIGINS + env("EXTRA_ORIGINS")
+CSRF_TRUSTED_ORIGINS = _BASE_ORIGINS + env("EXTRA_ORIGINS")
 
 # --- Celery ---------------------------------------------------------------
 # Celery hozircha ishlatilmaydi (AI ingest o'chirilgani sabab), lekin

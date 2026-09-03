@@ -83,6 +83,18 @@ class TelegramVerifyView(APIView):
                 "user": MeSerializer(user, context={"request": request}).data,
             })
 
+        # ── Captcha (hCaptcha) — HAQIQIY foydalanuvchilar uchun MAJBURIY ──
+        #    Test kodlari yuqorida qaytib ketdi (ular captchasiz). Secret bo'sh
+        #    bo'lsa (lokal) captcha o'chiq — `verify_captcha` doim True.
+        from .captcha import verify_captcha
+        token = str(request.data.get("captcha_token") or "").strip()
+        if not verify_captcha(token, client_ip(request)):
+            return Response(
+                {"error": {"code": "captcha_failed",
+                           "message": "Captcha tasdiqlanmadi. Qayta urinib ko'ring."}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Kerak bo'lmay qolgan kodlarni shu yerda tozalaymiz (cron kerak emas):
         # kod 1 daqiqa yashaydi, muddati o'tgani jadvalda turishining foydasi yo'q.
         TelegramOTP.purge_expired()
