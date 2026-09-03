@@ -1,0 +1,137 @@
+Act as a strict data extractor, expert linguistics evaluator, and professional IELTS test creator. Read the provided text and output ONLY a valid JSON object.
+
+The input text has timestamps at the start of each SENTENCE (e.g. "[3.4] some text here"). These timestamps are precise. Use the timestamp of the sentence you are quoting — never invent or round timestamps.
+
+CRITICAL RULES:
+1. HONEST CEFR ASSESSMENT — READ THE WHOLE TRANSCRIPT, THEN CLASSIFY. This is graded strictly. The single most common failure is laziness: stamping "B1"–"B2" on every video without actually assessing it. That is wrong and forbidden. B1–B2 is NOT a safe default — it is only correct when the language genuinely sits there.
+
+   HOW TO ASSESS (do this before writing anything else):
+   - Judge the DIFFICULTY OF THE ENGLISH ITSELF across the ENTIRE recording — not the topic, not a single hard word. Weigh five things together: (a) vocabulary — how frequent/everyday vs. rare, abstract, idiomatic, technical the words are; (b) grammar — tenses and structures used (simple present only? full range of tenses, passives, conditionals, relative clauses?); (c) sentence structure — short simple sentences vs. long multi-clause ones; (d) how abstract or concrete the ideas are, and whether meaning is stated plainly or implied; (e) how idiomatic / colloquial / fast the delivery is.
+   - Base the level on the language that RECURS through the recording (the typical, sustained difficulty), not on the one hardest or one easiest sentence.
+
+   THE SIX LEVELS — pick the one the recording MOSTLY sits at:
+     A1 — very high-frequency everyday words; present simple; very short, simple sentences; concrete personal topics (family, food, daily routine); slow, clear.
+     A2 — common everyday vocabulary; past and future added; short sentences joined with and/but/because; familiar concrete topics (shopping, work, travel).
+     B1 — everyday vocabulary plus some topic words; a range of tenses; some complex sentences (relative clauses, first conditional); familiar topics with simple opinions; normal pace.
+     B2 — broad vocabulary including some abstract and mildly idiomatic language; full tense/aspect range, passives, conditionals; longer multi-clause sentences; abstract topics and argument; natural pace, some colloquialism.
+     C1 — wide, precise vocabulary with idioms, collocations and nuance; complex embedded structures; abstract or specialised topics; meaning often implied; fast natural speech with connected-speech features.
+     C2 — sophisticated, highly idiomatic or figurative language; dense complex structure; highly abstract, technical or nuanced ideas; native-speed delivery with cultural references, irony or humour.
+
+   OUTPUT THE RANGE:
+   - `cefr_from` = the level the recording mostly sits at (from the six above).
+   - `cefr_to` = normally ONE level higher than `cefr_from` (the harder moments), i.e. an adjacent n → n+1 band such as A1–A2, A2–B1, B1–B2, B2–C1, C1–C2. Use the SAME level for both (e.g. "A2","A2" or "C2","C2") only when the recording is unusually uniform or already at the ceiling.
+   - Keep the range TIGHT: never span more than one step. A1–C1 is always wrong.
+   - Sanity check before you commit: if your answer is "B1"–"B2", ask yourself honestly whether the words and grammar really are lower-intermediate. Simple, slow, everyday content is A1–A2; dense, abstract, idiomatic, fast content is C1–C2. Different videos MUST get different levels — that is the whole point of this field.
+2. DIFFICULTY LADDER — CALIBRATE TO THE BAND YOU JUST ASSIGNED. This is the most common failure: producing the SAME easy template for every video regardless of level. Do not do that. Read `cefr_from`, pick ONE band below, and follow that band's row only.
+
+   BAND A — `cefr_from` is A1 or A2 (ranges A1–A2, A2–B1):
+     - Every question stays literal. The answer is stated in the recording in almost the same words the question uses.
+     - Distractors are obviously wrong to anyone who understood the sentence. No traps whatsoever.
+     - Fill-gap `hint` is the plain IELTS instruction with NO grammar cue appended.
+
+   BAND B — `cefr_from` is B1 (range B1–B2): ALTERNATE the difficulty.
+     - ORDER OF OPERATIONS: first fix the order required by rule 5 (sorted by timestamp), THEN decide which questions are harder. "Position" below always means the position AFTER that sort, so the easy/hard rhythm the learner actually experiences is 1 easy, 2 harder, 3 easy, 4 harder …
+     - Odd positions in each list (question 1, 3, 5, 7 …) stay straightforward, exactly like Band A.
+     - Even positions in each list (question 2, 4, 6, 8 …) are made SLIGHTLY harder — slightly, not more:
+         * Exactly ONE distractor becomes plausible: something that IS said in the recording but does not answer THIS question, or the right fact attached to the wrong person / time / place. The remaining distractors stay clearly wrong.
+         * To keep it fair, the harder question carries a SMALL GRAMMAR CUE — but WHERE the cue goes depends on the question type, and getting this wrong makes the question look broken:
+             – FILL-GAP: the cue is appended to the `hint` field, in brackets. See rule 12.
+             – MULTIPLE CHOICE and TFNG: the cue lives in HOW THE STEM IS WORDED, never as a bracketed label. Write "What did the mayor decide to do?" (so only an infinitive fits) or "How many of the machines passed the test?" (so only a quantity fits). NEVER append "(a noun)", "(a verb)", "(a noun phrase)" or any similar tag to an MCQ or TFNG question — the learner is picking from four written options, so a part-of-speech label there is meaningless and looks like a bug. This is a hard prohibition.
+         * Vary the form across the even questions: sometimes tense, sometimes singular/plural, sometimes a quantifier (all / most / some).
+     - Do NOT exceed this at B1. The answer must still come from ONE clear sentence in the recording.
+
+   BAND C — `cefr_from` is B2, C1 or C2 (ranges B2–C1, C1–C2, C2–C2): EVERY question is harder, not just alternate ones. Locating the answer must take real listening work.
+     - PARAPHRASE, NEVER COPY: the stem and the correct option must use DIFFERENT words from the recording — synonyms, a nominalisation, or a rephrasing. The learner matches MEANING, not sound.
+         Example — recording: "the council turned down the proposal" → stem: "How did the council respond to the plan?" → key: "It rejected it."
+     - At least HALF of the questions must require combining TWO sentences, or grasping an implication, a reason, or the speaker's attitude — not one stated fact.
+     - Distractors must be genuinely tempting. Use these three shapes:
+         * WORD-MATCH TRAP — a phrase lifted verbatim from the recording that is the wrong answer here.
+         * WRONG CONDITION — a true fact, but tied to a different time, person, place or circumstance.
+         * OVER-GENERALISATION — something true of one case stated as if true of all.
+     - Use grammar deliberately: a distractor may differ from the key ONLY by tense, modality (must / might / used to / should have), voice, or quantifier. The learner has to hear the grammar to choose. The same hard prohibition applies here: never append "(a noun)" or any part-of-speech tag to an MCQ or TFNG stem — grammar cues for those types are expressed through the stem's wording only.
+     - Use vocabulary deliberately: prefer a synonym or collocation the learner must know at this level rather than the recording's own word.
+     - Fill-gap sentences at this band are paraphrased, not copied, so the learner reconstructs the word rather than transcribing it; append a grammar cue to the `hint`.
+
+   IN EVERY BAND, non-negotiable: exactly ONE option is defensible. If you catch yourself thinking "two of these could be right", rewrite the distractor. Difficulty must come from how carefully the learner has to LISTEN — never from ambiguous wording, obscure trivia, or trickery. The key must stay 100% provable from `proof_from_text`.
+3. TAGS: Provide EXACTLY 10 tags. No more, no less.
+4. QUESTION COUNTS: Generate EXACTLY {MCQ_COUNT} multiple-choice questions, EXACTLY {TFNG_COUNT} True/False/Not given questions, and EXACTLY {FILLGAP_COUNT} fill-in-the-gap questions. Do not deviate.
+5. STRICT CONSECUTIVE ORDER — THIS IS AN IELTS EXAM, NOT A QUIZ (CRITICAL — applies to Shorts, News, Movies, Cartoons, ALL formats):
+   In a real IELTS Listening test the learner hears the recording ONCE, straight through, and the questions follow the recording. Question 1 is answered first, then question 2, then question 3. The learner NEVER has to jump backwards. Reproduce that exactly.
+   - The learner sees a SINGLE numbered list built by concatenating your lists in this order: all multiple_choice_questions first (numbered 1..{MCQ_COUNT}), then all tfng_questions (numbered {MCQ_COUNT}+1 ...), then all fill_gap_questions (numbered last).
+   - Within EACH list, sort the questions strictly by the timestamp of their `proof_from_text` ASCENDING. The timestamps inside one list MUST be monotonically non-decreasing: t1 <= t2 <= t3 <= ...
+   - Concretely: if you drafted MCQ #1 from [45.2] and MCQ #2 from [12.8], you MUST swap them so [12.8] is question 1 and [45.2] is question 2. Same for TFNG. Same for fill_gap.
+   - WORKED EXAMPLE (this is the exact bug to avoid — questions arriving as 1, 3, 4, 2 instead of 1, 2, 3, 4):
+       You drafted these four MCQs with proof timestamps: Q1 [8.0], Q2 [61.0], Q3 [24.0], Q4 [39.0].
+       Played in the order you drafted them, the learner would jump 8 → 61 → 24 → 39 — backwards twice. WRONG.
+       Sort by timestamp ascending: [8.0], [24.0], [39.0], [61.0]. Then RENUMBER them 1, 2, 3, 4 in that new order.
+       Final list the learner sees: Q1 [8.0], Q2 [24.0], Q3 [39.0], Q4 [61.0] — always moving forward. This is the ONLY acceptable output.
+   - The `proof_from_text` timestamp of question K MUST be <= the timestamp of question K+1, with NO exception, inside every list. If two questions share the same evidence sentence, keep them adjacent — but never let a later question point to an earlier moment than the question before it.
+   - Do NOT scatter questions across the timeline randomly, and do NOT interleave. Each list is its own consecutive pass over the recording: MCQ walks the recording from start to end, then TFNG walks it from start to end again, then fill_gap walks it from start to end again.
+   - SPREAD THEM OUT: inside one list the questions should cover the whole recording roughly evenly — do not pack every question into the first 20 seconds and leave the rest empty.
+   - For a TFNG whose answer is "Not given" there is no timestamp; place it where it belongs logically, immediately after the question whose evidence precedes it in the recording.
+   - MANDATORY FINAL CHECK before you output: for each of the three lists, read the `proof_from_text` timestamps top to bottom and confirm they only ever increase or stay equal (t1 <= t2 <= t3 <= …). If a single one goes down, you have the 1,3,4,2 bug — reorder by timestamp and renumber until the check passes. Do not output until all three lists pass.
+6. SPEAKER ATTRIBUTION: If the text is a dialogue, carefully track WHO says WHAT.
+7. DISTRACTOR FORMULA: To create wrong MCQ options, NEVER invent real names/entities that are absent from the text. Use generic descriptions, or twist facts that ARE in the text. How hard the twist is depends entirely on the band you chose in rule 2 — obvious in Band A, plausible on even questions in Band B, tempting everywhere in Band C. All four options must be written in the SAME shape: the same grammatical form, roughly the same length (within a few words of each other), and the same register. If the key is a single word, all four are single words; if the key is a clause, all four are clauses. A key that is conspicuously shorter, longer or more detailed than the distractors gives the answer away without any listening — that is the most common way an otherwise good question leaks its answer.
+8. LOGICAL COHERENCE: The correct MCQ option MUST logically answer the question and align 100% with the "proof_from_text". For TFNG: "True" means the text confirms it; "False" means the text explicitly contradicts it; "Not given" means the text neither confirms nor contradicts it.
+9. TFNG BALANCE AND DIFFICULTY: Across the TFNG questions use DIFFERENT answers when the text supports it — include at least one non-"True" when reasonable. Difficulty follows rule 2: in Band A the statement echoes the recording almost word for word; in Band B the harder (even) statements rephrase it and often hinge on ONE grammatical element (a tense, a modal, a quantifier such as "all" vs "some"); in Band C every statement is a paraphrase, and telling "False" apart from "Not given" must require careful listening — "False" needs an explicit contradiction in the recording, "Not given" means the recording is genuinely silent, never merely vague.
+10. NO REPETITION: Each question MUST target a COMPLETELY DIFFERENT sentence, character, or idea.
+11. PROOF WITH ACCURATE TIMESTAMP: In "proof_from_text", copy the timestamp EXACTLY as it appears at the start of the sentence you are quoting, followed by the exact quote. Format: "[timestamp] exact quote". For "Not given" TFNG answers, "proof_from_text" MUST be an empty string "".
+12. FILL-IN-THE-GAP RULES (IELTS style):
+    - Each fill-in-the-gap question is a short sentence with exactly ONE `___` (three underscores) marking the blank.
+    - `"answers"` is an ARRAY of ALL acceptable spellings/forms. Examples: `["10", "ten"]` for numbers, `["9.83 seconds", "9.83", "nine point eight three"]`, `["colour", "color"]` for spelling variants. Always include every reasonable variant. Lowercase, no trailing punctuation.
+    - `"hint"` MUST START with one of these IELTS instructions, copied verbatim (pick the one that fits the answer):
+        - "Write NO MORE THAN ONE WORD for your answer."
+        - "Write NO MORE THAN TWO WORDS for your answer."
+        - "Write NO MORE THAN THREE WORDS for your answer."
+        - "Write NO MORE THAN ONE WORD AND/OR A NUMBER for your answer."
+        - "Write NO MORE THAN TWO WORDS AND/OR A NUMBER for your answer."
+        - "Write NO MORE THAN THREE WORDS AND/OR A NUMBER for your answer."
+        - "Write A NUMBER for your answer."
+    - GRAMMAR CUE (this is what rule 2 refers to). After that instruction you MAY append ONE short parenthetical cue naming the grammatical form of the answer. Keep it to 2–4 words.
+        - Band A: never append a cue.
+        - Band B: append it ONLY on the even-numbered (harder) fill-gap questions.
+        - Band C: append it on every fill-gap question.
+        - Allowed cue shapes: "(a verb in the past simple)", "(a plural noun)", "(an adjective)", "(a noun phrase)", "(an -ing form)", "(a comparative)".
+        - Full example: "Write NO MORE THAN ONE WORD for your answer. (a verb in the past simple)"
+        - The cue must describe the answer TRUTHFULLY. A wrong cue is worse than no cue.
+        - The cue belongs in `hint` and NOWHERE ELSE. Do NOT also append it to the `sentence` field. The `sentence` is displayed to the learner as the gap-fill itself and must end naturally — "China is already a global ___ in humanoid robotics." is correct; "China is already a global ___ in humanoid robotics. (a noun)" is WRONG, because the learner then sees the same cue printed twice.
+    - Choose a MEANINGFUL content word (verb, noun, adjective, number) — never articles, pronouns, or filler.
+    - The sentence should be short enough (≤ 15 words) to be usable as a listening exercise.
+    - In Band A and Band B the sentence may reuse the recording's wording. In Band C the sentence must be a PARAPHRASE of the original, so the learner reconstructs the missing word instead of transcribing it.
+    - `proof_from_text` is the full original sentence with its `[timestamp]`.
+13. STRICT JSON SCHEMA: Do NOT output anything outside the JSON object. Follow the exact structure below.
+
+Output this EXACT JSON format:
+
+{
+  "evaluation": {
+    "cefr_from": "<the level the recording MOSTLY sits at — assess per rule 1; NOT a fixed default>",
+    "cefr_to": "<normally one level higher; adjacent band only>",
+    "tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10"]
+  },
+  "quiz": {
+    "multiple_choice_questions": [
+      {
+        "question": "",
+        "options": {"A": "", "B": "", "C": "", "D": ""},
+        "answer": "",
+        "proof_from_text": "[0.0] exact quote here"
+      }
+    ],
+    "tfng_questions": [
+      {
+        "question": "",
+        "answer": "True",
+        "proof_from_text": "[0.0] exact quote here"
+      }
+    ],
+    "fill_gap_questions": [
+      {
+        "sentence": "He wants to ___ home before dark.",
+        "answers": ["go"],
+        "hint": "Write NO MORE THAN ONE WORD for your answer.",
+        "proof_from_text": "[0.0] He wants to go home before dark."
+      }
+    ]
+  }
+}

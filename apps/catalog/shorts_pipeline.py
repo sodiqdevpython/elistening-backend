@@ -52,6 +52,10 @@ def _ai_prompt_candidates(name: str) -> list[str]:
     if env_dir:
         cands.append(os.path.join(env_dir, name))
     base = Path(settings.BASE_DIR)
+    # `aiprompts/` — backend repo ICHIDA, git-tracked (`.gitignore` `/ai/*.txt`
+    # ni bloklaydi, shu bois promptlar shu papkada yashaydi va `git pull` bilan
+    # keladi). Dockerfile `COPY . .` uni `/app/aiprompts` ga oladi.
+    cands.append(str(base / "aiprompts" / name))
     cands.append(str(base / "ai" / name))          # /app/ai (docker mount) yoki backend/ai
     cands.append(str(base.parent / "ai" / name))   # repo_root/ai (dev)
     cands.append(os.path.join("/ai", name))         # legacy absolute
