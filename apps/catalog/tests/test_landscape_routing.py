@@ -16,21 +16,26 @@ WATCH_URL = "https://www.youtube.com/watch?v=bbbbbbbbbbb"
 
 
 class PickTargetTests(SimpleTestCase):
-    def test_movies_section_splits_by_url(self):
-        self.assertEqual(pick_target("movies", SHORTS_URL), ("short", Short.ContentType.MOVIE))
-        self.assertEqual(pick_target("movies", WATCH_URL), ("dictation", Dictation.Type.MOVIE))
+    """**Bo'lim turni aytib turadi** — havola faqat zaxira tekshiruv."""
 
-    def test_cartoons_section_splits_by_url(self):
-        self.assertEqual(pick_target("cartoons", SHORTS_URL), ("short", Short.ContentType.CARTOON))
+    def test_movies_section_is_always_a_video(self):
+        """"Filmlar" ni tanlagan odam uzun video qo'shayotgani aniq."""
+        self.assertEqual(pick_target("movies", WATCH_URL), ("dictation", Dictation.Type.MOVIE))
+        self.assertEqual(pick_target("movies", SHORTS_URL), ("dictation", Dictation.Type.MOVIE))
+
+    def test_cartoons_section_is_always_a_video(self):
         self.assertEqual(pick_target("cartoons", WATCH_URL), ("dictation", Dictation.Type.CARTOON))
 
-    def test_news_section_splits_by_url(self):
-        self.assertEqual(pick_target("news", SHORTS_URL), ("short", Short.ContentType.NEWS))
+    def test_news_section_is_always_a_video(self):
         self.assertEqual(pick_target("news", WATCH_URL), ("dictation", Dictation.Type.NEWS))
 
+    def test_shorts_section_takes_shorts(self):
+        self.assertEqual(pick_target("shorts", SHORTS_URL), ("short", Short.ContentType.SHORT))
+
     def test_shorts_section_with_a_long_video_becomes_a_video(self):
-        """Shorts bo'limiga uzun video qo'yilsa ham u tik shablonga tushmaydi."""
-        self.assertEqual(pick_target("shorts", WATCH_URL), ("dictation", Dictation.Type.RANDOM_VIDEO))
+        """Shorts bo'limiga uzun video tushib qolsa ham tik shablonga tushmaydi."""
+        self.assertEqual(pick_target("shorts", WATCH_URL),
+                         ("dictation", Dictation.Type.RANDOM_VIDEO))
 
     def test_random_videos_always_dictation(self):
         self.assertEqual(pick_target("random_videos", SHORTS_URL),
@@ -42,7 +47,7 @@ class PickTargetTests(SimpleTestCase):
 
 class ShortValidationTests(TestCase):
     def test_landscape_url_is_rejected(self):
-        """Admin formasi oddiy havolani `Short` ga qabul qilmaydi."""
+        """Shorts bo'limi oddiy havolani qabul qilmaydi (zaxira tekshiruv)."""
         short = Short(youtube_link=WATCH_URL, content_type=Short.ContentType.MOVIE)
         with self.assertRaises(ValidationError) as ctx:
             short.full_clean(exclude=["title"])

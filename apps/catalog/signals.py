@@ -103,7 +103,7 @@ for _proxy in DICTATION_PROXIES:
     post_save.connect(enqueue_dictation_ai, sender=_proxy,
                       dispatch_uid=f"enqueue_dictation_ai_{_proxy.__name__}")
 
-# Short proxy'lari (MovieVideo, CartoonVideo, ...) uchun ham xuddi shu.
+# Short proxy'lari (hozircha faqat `ShortVideo`) uchun ham xuddi shu.
 for _proxy in SHORT_PROXIES:
     post_save.connect(enqueue_short_ai, sender=_proxy,
                       dispatch_uid=f"enqueue_short_ai_{_proxy.__name__}")

@@ -22,49 +22,47 @@ from .models import ChannelIngestTask, Dictation, Short, is_shorts_url
 #
 #   SHORTS/MOVIES/CARTOONS/NEWS → Short(content_type=...)
 #   RANDOM_VIDEOS               → Dictation(type=random_video, is_media=True)
-# Bo'lim → (TIK havola uchun, KENG havola uchun).
+# Bo'lim → (model, subtype).
 #
-# **Modelni HAVOLA hal qiladi, bo'lim emas.** `youtube.com/shorts/...` —
-# `Short` (tik lenta), oddiy `watch?v=...` — `Dictation` (16:9 video
-# sahifasi). Bo'lim faqat turni (film / multfilm / yangilik) belgilaydi.
+# **Bo'lim turni AYTIB TURADI.** "Filmlar" ni tanlagan odam uzun YouTube
+# videosi qo'shayotgani aniq — Shorts esa faqat `youtube.com/shorts/...` da
+# bo'ladi va boshqa hech qayerda yo'q. Shu bois Film / Multfilm / Yangilik
+# HAR DOIM `Dictation` (16:9 video sahifasi), Shorts esa `Short` (tik lenta).
 #
-# Ilgari MOVIES/CARTOONS/NEWS **har doim** `Short` ga tushardi va oddiy
-# YouTube videosi Shorts lentasida, tik shablonda ochilardi — foydalanuvchi
-# buni "na video na shorts" deb ta'rifladi. `Short.ContentType.MOVIE`
-# yorlig'ining o'zi ham "Film / uzun video" edi, ya'ni model bilan
-# ko'rsatish bir-biriga zid edi.
+# Yagona istisno — SHORTS bo'limiga oddiy video havolasi tushib qolsa
+# (kanal `/videos` sahifasi berilgan bo'lsa): u tik shablonga tushmasligi
+# uchun `Dictation` ga o'tkaziladi.
+#
+# > Ilgari MOVIES/CARTOONS/NEWS ham `Short` ga yozardi va katalogdan
+# > "Filmlar"ga qo'shilgan oddiy video vertikal lentada, o'ziga mos
+# > kelmaydigan ko'rinishda chiqardi ("na video na shorts").
 _TARGET_MAP = {
-    ChannelIngestTask.TargetKind.SHORTS: (
-        ("short", Short.ContentType.SHORT), ("dictation", Dictation.Type.RANDOM_VIDEO),
-    ),
-    ChannelIngestTask.TargetKind.MOVIES: (
-        ("short", Short.ContentType.MOVIE), ("dictation", Dictation.Type.MOVIE),
-    ),
-    ChannelIngestTask.TargetKind.CARTOONS: (
-        ("short", Short.ContentType.CARTOON), ("dictation", Dictation.Type.CARTOON),
-    ),
-    ChannelIngestTask.TargetKind.NEWS: (
-        ("short", Short.ContentType.NEWS), ("dictation", Dictation.Type.NEWS),
-    ),
-    ChannelIngestTask.TargetKind.RANDOM_VIDEOS: (
-        ("dictation", Dictation.Type.RANDOM_VIDEO),
-        ("dictation", Dictation.Type.RANDOM_VIDEO),
-    ),
+    ChannelIngestTask.TargetKind.SHORTS: ("short", Short.ContentType.SHORT),
+    ChannelIngestTask.TargetKind.MOVIES: ("dictation", Dictation.Type.MOVIE),
+    ChannelIngestTask.TargetKind.CARTOONS: ("dictation", Dictation.Type.CARTOON),
+    ChannelIngestTask.TargetKind.NEWS: ("dictation", Dictation.Type.NEWS),
+    ChannelIngestTask.TargetKind.RANDOM_VIDEOS: ("dictation", Dictation.Type.RANDOM_VIDEO),
 }
 
 
 def pick_target(target_kind: str, url: str) -> tuple[str, str] | None:
-    """Bo'lim + havola → (model, subtype).
+    """Bo'lim (+ zaxira sifatida havola) → (model, subtype).
 
-    >>> pick_target("movies", "https://youtube.com/shorts/abc12345678")
-    ('short', 'movie')
     >>> pick_target("movies", "https://www.youtube.com/watch?v=abc12345678")
     ('dictation', 'movie')
+    >>> pick_target("shorts", "https://youtube.com/shorts/abc12345678")
+    ('short', 'short')
+    >>> pick_target("shorts", "https://www.youtube.com/watch?v=abc12345678")
+    ('dictation', 'random_video')
     """
-    pair = _TARGET_MAP.get(target_kind)
-    if not pair:
+    target = _TARGET_MAP.get(target_kind)
+    if target is None:
         return None
-    return pair[0] if is_shorts_url(url) else pair[1]
+    # Shorts bo'limiga uzun video tushib qolsa — u tik shablonga tushmasin.
+    if target[0] == "short" and not is_shorts_url(url):
+        return ("dictation", Dictation.Type.RANDOM_VIDEO)
+    return target
+
 
 logger = logging.getLogger(__name__)
 

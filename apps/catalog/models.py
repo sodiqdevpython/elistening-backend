@@ -336,7 +336,7 @@ RandomVideoDictation = _make_proxy(
     "random_video", "5. Tasodifiy video", "5. Random Videos (video)", 5,
 )
 NewsDictation = _make_proxy(
-    "news", "6. Yangilik (video)", "6. News (video)", 6,
+    "news", "6. Yangilik", "6. News videolar", 6,
 )
 ToeflListeningDictation = _make_proxy(
     "toefl", "7. TOEFL Listening", "7. TOEFL Listening", 7,
@@ -348,10 +348,10 @@ SpellingNamesDictation = _make_proxy(
     "spelling", "9. Harflab yozish", "9. Spelling Names", 9,
 )
 MovieDictation = _make_proxy(
-    "movie", "10. Film (video)", "10. Filmlar (video)", 10,
+    "movie", "10. Film", "10. Filmlar", 10,
 )
 CartoonDictation = _make_proxy(
-    "cartoon", "11. Multfilm (video)", "11. Multfilmlar (video)", 11,
+    "cartoon", "11. Multfilm", "11. Multfilmlar", 11,
 )
 
 
@@ -510,23 +510,25 @@ class Short(TimeStampedModel):
         return self.title or (self.youtube_id and f"[Short {self.youtube_id}]") or f"Short #{self.pk}"
 
     def clean(self):
-        """`Short` — FAQAT tik (`/shorts/`) havolalar uchun.
+        """Shorts bo'limi — FAQAT `youtube.com/shorts/...` havolalari uchun.
 
-        Oddiy `watch?v=` havolasi bu jadvalga tushsa, sayt ham, ilova ham uni
-        Shorts lentasida (tik shablonda) ochadi va natija "na video na
-        shorts" bo'ladi. Bunday havola `Dictation` ga tushishi kerak —
-        adminda "Filmlar (video)" / "Multfilmlar (video)" / "News (video)"
-        bo'limlari aynan shu uchun bor.
+        Shorts boshqa hech qayerda bo'lmaydi; oddiy `watch?v=` havolasi —
+        uzun video va u `Dictation` ga tegishli. Adashib qo'yilgan havolani
+        shu tekshiruv darrov ushlaydi (aks holda uzun video Shorts
+        lentasida tik shablonda ochilib qolardi).
+
+        **Diqqat:** endi `Short` ning admin bo'limi bitta — "Shorts". Film,
+        Multfilm va Yangilik bo'limlari `Dictation` da, ya'ni admin to'g'ri
+        menyuni tanlagan bo'lsa bu xatoga umuman duch kelmaydi.
         """
         super().clean()
         if self.youtube_link and not is_shorts_url(self.youtube_link):
             raise ValidationError({
                 "youtube_link": (
-                    "Bu oddiy YouTube havolasi (tik Shorts emas). Shorts "
-                    "jadvali faqat `youtube.com/shorts/...` uchun. Uzun "
-                    "videoni Diktantlar bo'limiga qo'shing: "
-                    "«Filmlar (video)», «Multfilmlar (video)» yoki "
-                    "«News (video)»."
+                    "Bu oddiy YouTube havolasi. Shorts bo'limi faqat "
+                    "`youtube.com/shorts/...` uchun. Uzun videoni tegishli "
+                    "bo'limga qo'shing: «Filmlar», «Multfilmlar», "
+                    "«Yangilik» yoki «Random Videos»."
                 ),
             })
 
@@ -593,13 +595,19 @@ def _make_short_proxy(content_type_value: str, verbose: str, verbose_plural: str
     return type(cls_name, (Short,), attrs)
 
 
-# Foydalanuvchi kartochkasi bo'yicha 4 ta bo'lim.
+# `Short` — FAQAT bitta bo'lim: Shorts.
+#
+# Ilgari bu yerda Yangilik / Film / Multfilm bo'limlari ham bor edi va ular
+# `Short` ga yozardi — ya'ni uzun YouTube videosi qisqa-video jadvaliga
+# tushib, saytda ham, ilovada ham TIK Shorts shablonida ochilardi.
+# Foydalanuvchi buni "na video na shorts" deb ta'rifladi va haq edi:
+# **menyuning o'zi turni aytib turadi** — "Filmlar" ni tanlagan odam uzun
+# video qo'shayotgani aniq. Shu bois ular `Dictation` bo'limlariga ko'chdi
+# (`MovieDictation`, `CartoonDictation`, `NewsDictation`), bu yerda esa
+# ikki xil "Filmlar" turmasin deb faqat Shorts qoldirildi.
 ShortVideo = _make_short_proxy("short", "1. Shorts", "1. Shorts (qisqa video)", 1)
-NewsVideo = _make_short_proxy("news", "2. Yangilik (video)", "2. News videolar", 2)
-MovieVideo = _make_short_proxy("movie", "3. Film / uzun video", "3. Filmlar", 3)
-CartoonVideo = _make_short_proxy("cartoon", "4. Multfilm", "4. Multfilmlar", 4)
 
-SHORT_PROXIES = [ShortVideo, NewsVideo, MovieVideo, CartoonVideo]
+SHORT_PROXIES = [ShortVideo]
 
 
 class AllYoutubeVideo(Short):
