@@ -14,8 +14,8 @@ from apps.billing import views as billing_views
 from apps.catalog import views as catalog_views
 from apps.catalog import legacy_views
 
-admin.site.site_header = "listening.uz boshqaruvi"
-admin.site.site_title = "listening.uz"
+admin.site.site_header = "eListening.uz boshqaruvi"
+admin.site.site_title = "eListening.uz"
 admin.site.index_title = "Diktantlar va foydalanuvchilar"
 
 router = DefaultRouter()

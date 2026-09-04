@@ -35,7 +35,7 @@ def segment_editor(request, dictation_id: int) -> HttpResponse:
         "segments_json": json.dumps(segments, ensure_ascii=False),
         "audio_url": dictation.audio.url if dictation.audio else None,
         "back_url": reverse("admin:catalog_dictation_change", args=[dictation.pk]),
-        "site_header": "listening.uz admin",
+        "site_header": "eListening.uz admin",
     })
 
 

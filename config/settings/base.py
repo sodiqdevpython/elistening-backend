@@ -193,7 +193,7 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "listening.uz API",
+    "TITLE": "eListening.uz API",
     "DESCRIPTION": "Ingliz tili tinglab tushunish platformasi API",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
