@@ -23,6 +23,7 @@ Admin panelidagi 🎬 Segment editor shu JSON ni waveform ustida qo'lda
 tahrirlash imkonini beradi.
 """
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.text import slugify
 
@@ -77,6 +78,11 @@ class Dictation(TimeStampedModel):
         TOEIC = "toeic", "TOEIC Listening"
         NEWS = "news", "Yangiliklar"
         RANDOM_VIDEO = "random_video", "Tasodifiy videolar"
+        # Film va multfilm ham DIKTANT (uzun 16:9 video) — ular `Short`
+        # emas. `Short` faqat TIK Shorts uchun: `is_shorts_url` qoidasiga
+        # qarang va `channel_ingest._pick_target` ga.
+        MOVIE = "movie", "Filmlar"
+        CARTOON = "cartoon", "Multfilmlar"
         TED = "ted", "TED"
         KIDS_STORY = "kids_story", "Bolalar uchun hikoyalar"
         # MEDICAL ("medical") va IPA ("ipa") olib tashlandi — mavzular
@@ -306,7 +312,8 @@ def _make_proxy(type_value: str, verbose: str, verbose_plural: str, order: int):
         "save": save_hook,
         "_admin_order": order,
         "_admin_media_kind": (
-            "video" if type_value in ("news", "random_video") else "audio"
+            "video" if type_value in ("news", "random_video", "movie", "cartoon")
+            else "audio"
         ),
     }
     return type(cls_name, (Dictation,), attrs)
@@ -340,12 +347,19 @@ NumbersDictation = _make_proxy(
 SpellingNamesDictation = _make_proxy(
     "spelling", "9. Harflab yozish", "9. Spelling Names", 9,
 )
+MovieDictation = _make_proxy(
+    "movie", "10. Film (video)", "10. Filmlar (video)", 10,
+)
+CartoonDictation = _make_proxy(
+    "cartoon", "11. Multfilm (video)", "11. Multfilmlar (video)", 11,
+)
 
 
 DICTATION_PROXIES = [
     ShortStoryDictation, ConversationDictation, ToeicListeningDictation,
     IeltsListeningDictation, RandomVideoDictation, NewsDictation,
     ToeflListeningDictation, NumbersDictation, SpellingNamesDictation,
+    MovieDictation, CartoonDictation,
 ]
 
 
@@ -494,6 +508,27 @@ class Short(TimeStampedModel):
 
     def __str__(self):
         return self.title or (self.youtube_id and f"[Short {self.youtube_id}]") or f"Short #{self.pk}"
+
+    def clean(self):
+        """`Short` — FAQAT tik (`/shorts/`) havolalar uchun.
+
+        Oddiy `watch?v=` havolasi bu jadvalga tushsa, sayt ham, ilova ham uni
+        Shorts lentasida (tik shablonda) ochadi va natija "na video na
+        shorts" bo'ladi. Bunday havola `Dictation` ga tushishi kerak —
+        adminda "Filmlar (video)" / "Multfilmlar (video)" / "News (video)"
+        bo'limlari aynan shu uchun bor.
+        """
+        super().clean()
+        if self.youtube_link and not is_shorts_url(self.youtube_link):
+            raise ValidationError({
+                "youtube_link": (
+                    "Bu oddiy YouTube havolasi (tik Shorts emas). Shorts "
+                    "jadvali faqat `youtube.com/shorts/...` uchun. Uzun "
+                    "videoni Diktantlar bo'limiga qo'shing: "
+                    "«Filmlar (video)», «Multfilmlar (video)» yoki "
+                    "«News (video)»."
+                ),
+            })
 
     def save(self, *args, **kwargs):
         """`is_vertical` ni HAR safar havoladan qayta hisoblaydi.

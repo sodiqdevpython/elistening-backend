@@ -14,7 +14,7 @@ import re
 
 from django.utils import timezone
 
-from .models import ChannelIngestTask, Dictation, Short
+from .models import ChannelIngestTask, Dictation, Short, is_shorts_url
 
 
 # Foydalanuvchi tanlagan bo'lim → qaysi modelga va qanday qiymatlar bilan
@@ -22,13 +22,49 @@ from .models import ChannelIngestTask, Dictation, Short
 #
 #   SHORTS/MOVIES/CARTOONS/NEWS → Short(content_type=...)
 #   RANDOM_VIDEOS               → Dictation(type=random_video, is_media=True)
+# Bo'lim → (TIK havola uchun, KENG havola uchun).
+#
+# **Modelni HAVOLA hal qiladi, bo'lim emas.** `youtube.com/shorts/...` —
+# `Short` (tik lenta), oddiy `watch?v=...` — `Dictation` (16:9 video
+# sahifasi). Bo'lim faqat turni (film / multfilm / yangilik) belgilaydi.
+#
+# Ilgari MOVIES/CARTOONS/NEWS **har doim** `Short` ga tushardi va oddiy
+# YouTube videosi Shorts lentasida, tik shablonda ochilardi — foydalanuvchi
+# buni "na video na shorts" deb ta'rifladi. `Short.ContentType.MOVIE`
+# yorlig'ining o'zi ham "Film / uzun video" edi, ya'ni model bilan
+# ko'rsatish bir-biriga zid edi.
 _TARGET_MAP = {
-    ChannelIngestTask.TargetKind.SHORTS:   ("short", Short.ContentType.SHORT),
-    ChannelIngestTask.TargetKind.MOVIES:   ("short", Short.ContentType.MOVIE),
-    ChannelIngestTask.TargetKind.CARTOONS: ("short", Short.ContentType.CARTOON),
-    ChannelIngestTask.TargetKind.NEWS:     ("short", Short.ContentType.NEWS),
-    ChannelIngestTask.TargetKind.RANDOM_VIDEOS: ("dictation", Dictation.Type.RANDOM_VIDEO),
+    ChannelIngestTask.TargetKind.SHORTS: (
+        ("short", Short.ContentType.SHORT), ("dictation", Dictation.Type.RANDOM_VIDEO),
+    ),
+    ChannelIngestTask.TargetKind.MOVIES: (
+        ("short", Short.ContentType.MOVIE), ("dictation", Dictation.Type.MOVIE),
+    ),
+    ChannelIngestTask.TargetKind.CARTOONS: (
+        ("short", Short.ContentType.CARTOON), ("dictation", Dictation.Type.CARTOON),
+    ),
+    ChannelIngestTask.TargetKind.NEWS: (
+        ("short", Short.ContentType.NEWS), ("dictation", Dictation.Type.NEWS),
+    ),
+    ChannelIngestTask.TargetKind.RANDOM_VIDEOS: (
+        ("dictation", Dictation.Type.RANDOM_VIDEO),
+        ("dictation", Dictation.Type.RANDOM_VIDEO),
+    ),
 }
+
+
+def pick_target(target_kind: str, url: str) -> tuple[str, str] | None:
+    """Bo'lim + havola → (model, subtype).
+
+    >>> pick_target("movies", "https://youtube.com/shorts/abc12345678")
+    ('short', 'movie')
+    >>> pick_target("movies", "https://www.youtube.com/watch?v=abc12345678")
+    ('dictation', 'movie')
+    """
+    pair = _TARGET_MAP.get(target_kind)
+    if not pair:
+        return None
+    return pair[0] if is_shorts_url(url) else pair[1]
 
 logger = logging.getLogger(__name__)
 
@@ -174,14 +210,11 @@ def run_ingest(task: ChannelIngestTask) -> None:
 
     videos = _list_channel_videos(task.channel_url, task.count)
 
-    # Foydalanuvchi tanlagan bo'lim → (Short|Dictation, subtype)
-    mapping = _TARGET_MAP.get(task.target_kind)
-    if not mapping:
+    if task.target_kind not in _TARGET_MAP:
         raise ChannelIngestError(
             f"Noma'lum bo'lim: {task.target_kind}. Faqat: "
             + ", ".join(_TARGET_MAP.keys())
         )
-    model_kind, subtype = mapping
 
     created: list[dict] = []
     skipped: list[dict] = []
@@ -194,6 +227,12 @@ def run_ingest(task: ChannelIngestTask) -> None:
             skipped.append({"youtube_id": yid, "title": video["title"],
                             "reason": "already-in-db"})
             continue
+        # Model HAR VIDEO uchun alohida tanlanadi: kanalda tik ham, keng
+        # ham bo'lishi mumkin.
+        target = pick_target(task.target_kind, video["url"])
+        if target is None:                        # yuqorida tekshirilgan
+            continue
+        model_kind, subtype = target
         try:
             if model_kind == "dictation":
                 obj = _create_dictation(video, subtype)
