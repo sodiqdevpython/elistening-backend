@@ -32,12 +32,21 @@ class Plan(OrderedModel):
     daily_dictation_limit = models.IntegerField("Kunlik Diktant (bo'sh = cheksiz)", null=True, blank=True)
     daily_ielts_limit = models.IntegerField("Kunlik IELTS test (bo'sh = cheksiz)", null=True, blank=True)
 
+    #: Tarif kodi → creative STATUS nomi. STATIC (bazadagi nomga bog'liq emas),
+    #: tarjimasiz — frontend/mobil bilan bir xil. Admin ro'yxati/dropdown va
+    #: str(plan) shu nomni ko'rsatadi.
+    STATUS_NAMES = {"free": "Qaldirg'och", "plus": "Jo'shqin", "pro": "Bo'talog'im"}
+
     class Meta(OrderedModel.Meta):
         verbose_name = "Tarif"
         verbose_name_plural = "Tariflar"
 
+    @property
+    def status_name(self) -> str:
+        return self.STATUS_NAMES.get(self.code, self.name_uz)
+
     def __str__(self):
-        return self.name_uz
+        return self.status_name
 
     def limit_for(self, kind: str):
         """`kind` (shorts|video|dictation|ielts) uchun kunlik limit; None = cheksiz."""

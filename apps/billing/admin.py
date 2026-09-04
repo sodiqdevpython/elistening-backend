@@ -13,7 +13,7 @@ class PlanAdmin(BaseModelAdmin):
     (`/admin/billing/plan/add/` endi 403). Ro'yxat baribir kerak — boshqa
     admin'lar (Subscription, Payment...) `plan` FK'sini autocomplete qiladi.
     """
-    list_display = ("name_uz", "code", "price_uzs", "is_default", "order")
+    list_display = ("status_name", "code", "price_uzs", "is_default", "order")
     search_fields = ("name_uz", "name_en", "code")
 
     def has_add_permission(self, request):
@@ -28,10 +28,20 @@ class PlanAdmin(BaseModelAdmin):
 
 @admin.register(Subscription)
 class SubscriptionAdmin(BaseModelAdmin):
+    """Foydalanuvchiga STATUS (tarif) berish/o'zgartirish shu yerda.
+
+    `plan` maydoni oddiy DROPDOWN — 3 status ko'rinadi (Qaldirg'och / Jo'shqin
+    / Bo'talog'im), qidirishning hojati yo'q. Foydalanuvchini tanlab, status
+    berasiz; limitlar shu statusga qarab ishlaydi. Har foydalanuvchida BITTA
+    obuna — mavjud bo'lsa uni tahrirlab statusni almashtiriladi.
+    """
+
     list_display = ("user", "plan", "status", "reason", "started_at", "expires_at", "active_flag")
     list_filter = ("status", "plan", "reason", "started_at")
     search_fields = ("user__username", "user__display_name")
-    autocomplete_fields = ("user", "plan")
+    # `plan` ni ATAYLAB autocomplete'dan chiqardik — 3 ta status uchun oddiy
+    # dropdown ancha qulay (bo'sh ko'rinmaydi). `user` ko'p bo'lgani uchun autocomplete.
+    autocomplete_fields = ("user",)
     list_select_related = ("user", "plan")
 
     @admin.display(description="Faolmi", boolean=True)
