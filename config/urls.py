@@ -38,6 +38,7 @@ api_patterns = [
     path("me/", account_views.MeView.as_view(), name="me"),
     path("me/stats/", account_views.my_stats, name="me-stats"),
     path("me/limits/", account_views.my_limits, name="me-limits"),
+    path("me/request-deletion/", account_views.request_account_deletion, name="me-request-deletion"),
     path("me/invites/", account_views.my_invites, name="me-invites"),
     path("me/subscriptions/", account_views.my_subscriptions, name="me-subscriptions"),
     path("auth/username-check/", account_views.username_check, name="username-check"),

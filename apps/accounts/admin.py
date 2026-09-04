@@ -20,15 +20,31 @@ class DailyActivityInline(admin.TabularInline):
     verbose_name_plural = "Kunlik faollik"
 
 
+class DeletionRequestedFilter(admin.SimpleListFilter):
+    """"Akkauntni o'chirish so'rovi bor/yo'q" bo'yicha filtr."""
+    title = "O'chirish so'rovi"
+    parameter_name = "deletion"
+
+    def lookups(self, request, model_admin):
+        return [("yes", "So'rov bor"), ("no", "Yo'q")]
+
+    def queryset(self, request, qs):
+        if self.value() == "yes":
+            return qs.filter(deletion_requested_at__isnull=False)
+        if self.value() == "no":
+            return qs.filter(deletion_requested_at__isnull=True)
+        return qs
+
+
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     list_per_page = 25
     save_on_top = True
     list_display = (
         "username", "display_name", "telegram_id", "cefr_level",
-        "total_hours", "invited_count", "is_active", "date_joined",
+        "total_hours", "invited_count", "deletion_flag", "is_active", "date_joined",
     )
-    list_filter = ("cefr_level", "language", "gender", "is_active", "is_staff", "date_joined")
+    list_filter = (DeletionRequestedFilter, "cefr_level", "language", "gender", "is_active", "is_staff", "date_joined")
     search_fields = ("username", "display_name", "telegram_username", "telegram_id", "email", "invite_code")
     ordering = ("-date_joined",)
     readonly_fields = ("last_login", "date_joined", "invite_code", "total_hours")
@@ -41,6 +57,13 @@ class UserAdmin(DjangoUserAdmin):
         ("Profil", {"fields": ("display_name", "avatar", "email", "cefr_level", "gender", "language")}),
         ("Telegram", {"fields": ("telegram_id", "telegram_username")}),
         ("Faollik", {"fields": ("last_active_at", "total_hours")}),
+        ("Akkauntni o'chirish so'rovi", {
+            "fields": ("deletion_requested_at",),
+            "description": "Foydalanuvchi o'chirishni so'ragan. Akkaunt AVTOMATIK "
+                           "o'chmaydi — o'zingiz hal qilasiz. Bekor qilish uchun "
+                           "sanani bo'shatib saqlang (yoki user qayta login qilsa "
+                           "o'zi bekor bo'ladi).",
+        }),
         ("Taklif", {"fields": ("invite_code", "invited_by")}),
         ("Ruxsatlar", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
         ("Sanalar", {"fields": ("last_login", "date_joined")}),
@@ -59,6 +82,10 @@ class UserAdmin(DjangoUserAdmin):
     @admin.display(description="Takliflar")
     def invited_count(self, obj):
         return obj.invited_count
+
+    @admin.display(description="O'chirish so'rovi", boolean=True)
+    def deletion_flag(self, obj):
+        return obj.deletion_requested_at is not None
 
 
 @admin.register(DailyActivity)

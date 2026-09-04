@@ -33,6 +33,11 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 # hCaptcha — login (OTP verify) uchun. Secret bo'sh bo'lsa captcha O'CHIQ.
 HCAPTCHA_SECRET = env("HCAPTCHA_SECRET")
 HCAPTCHA_SITEKEY = env("HCAPTCHA_SITEKEY")
+# Testlarda captcha O'CHIQ — verify endpoint tashqi hCaptcha API'ni chaqirmasin
+# (aks holda `.env` da secret bo'lsa OTP testlari 400 "captcha_failed" oladi).
+import sys as _sys  # noqa: E402
+if len(_sys.argv) > 1 and _sys.argv[1] == "test":
+    HCAPTCHA_SECRET = ""
 
 # Doimiy TEST akkauntlar — bu kodlar kiritilsa har doim mos akkauntga kiradi
 # (bot kodisiz). Har biri o'z tarifida. Bot generatori bu kodlarni HECH QACHON

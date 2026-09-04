@@ -60,6 +60,13 @@ class User(AbstractUser):
 
     last_active_at = models.DateTimeField("Oxirgi faollik", null=True, blank=True)
 
+    #: Foydalanuvchi akkauntni o'chirishni SO'RAGAN vaqti (Google Play talabi).
+    #: Akkaunt ATAYLAB darrov o'chirilmaydi — admin qo'lda ko'rib hal qiladi.
+    #: Foydalanuvchi qayta kirsa (login) — so'rov BEKOR qilinadi (tozalanadi).
+    deletion_requested_at = models.DateTimeField(
+        "O'chirish so'rovi", null=True, blank=True, db_index=True,
+    )
+
     invite_code = models.CharField(
         "Taklif kodi", max_length=12, unique=True, default=generate_invite_code, db_index=True
     )

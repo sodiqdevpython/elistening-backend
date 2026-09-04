@@ -30,6 +30,10 @@ from .serializers import (
 def issue_tokens(user, request=None) -> dict:
     # Sessiyaga bog'liq (bir platformada bitta qurilma) — `apps/accounts/auth.py`.
     from .auth import build_tokens
+    # Qayta LOGIN — akkauntni o'chirish so'rovi bo'lsa BEKOR qilinadi.
+    if getattr(user, "deletion_requested_at", None):
+        user.deletion_requested_at = None
+        user.save(update_fields=["deletion_requested_at"])
     return build_tokens(user, request)
 
 
@@ -273,6 +277,21 @@ def my_limits(request):
     """Joriy tarif + har tur bo'yicha kunlik limit/ishlatilgan/qolgan."""
     from apps.billing.limits import snapshot
     return Response(snapshot(request.user))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def request_account_deletion(request):
+    """Akkauntni o'chirish SO'ROVI (Google Play talabi).
+
+    Akkaunt ATAYLAB darrov o'chirilmaydi — faqat `deletion_requested_at`
+    belgilanadi, admin uni ro'yxatda ko'radi va qo'lda hal qiladi. Foydalanuvchi
+    QAYTA LOGIN qilsa so'rov bekor bo'ladi (`TelegramVerifyView` tozalaydi).
+    Mijoz bu javobdan keyin foydalanuvchini chiqaradi (logout).
+    """
+    request.user.deletion_requested_at = timezone.now()
+    request.user.save(update_fields=["deletion_requested_at"])
+    return Response({"ok": True, "deletion_requested_at": request.user.deletion_requested_at})
 
 
 @api_view(["GET"])
