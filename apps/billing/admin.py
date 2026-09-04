@@ -7,18 +7,23 @@ from .models import InviteReward, Payment, Plan, Subscription, SubscriptionEvent
 
 @admin.register(Plan)
 class PlanAdmin(BaseModelAdmin):
-    list_display = ("name_uz", "code", "price_uzs", "price_usd", "daily_lesson_limit",
-                    "daily_exam_limit", "is_default", "order", "is_active")
-    list_editable = ("order", "is_active", "is_default")
-    list_filter = ("is_active", "is_default")
+    """Tariflar STATIC — narx/nom/limitlar KODDA (frontend `BillingPage`,
+    mobil `planStatus`), baza qatorlari `seed_demo` orqali. Shu bois admin
+    FAQAT KO'RISH uchun: **qo'shish / tahrirlash / o'chirish O'CHIRILGAN**
+    (`/admin/billing/plan/add/` endi 403). Ro'yxat baribir kerak — boshqa
+    admin'lar (Subscription, Payment...) `plan` FK'sini autocomplete qiladi.
+    """
+    list_display = ("name_uz", "code", "price_uzs", "is_default", "order")
     search_fields = ("name_uz", "name_en", "code")
-    prepopulated_fields = {"code": ("name_en",)}
-    fieldsets = (
-        (None, {"fields": ("code", "name_uz", "name_en", "order", "is_active", "is_default")}),
-        ("Narx", {"fields": ("price_uzs", "price_usd")}),
-        ("Imkoniyatlar", {"fields": ("features_uz", "features_en")}),
-        ("Kvotalar", {"fields": ("daily_lesson_limit", "daily_exam_limit")}),
-    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False  # ko'rish mumkin, tahrirlash yo'q
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Subscription)
