@@ -468,7 +468,7 @@ class ShortAdmin(BaseModelAdmin):
     """
 
     list_display = (
-        "title_col", "content_type", "youtube_id", "cefr_range", "ai_status_badge",
+        "title_col", "content_type", "is_vertical", "youtube_id", "cefr_range", "ai_status_badge",
         "duration_col", "priority", "views", "is_published", "dead_badge", "created_at",
     )
     # `content_type` va `priority` ro'yxatning o'zida tahrirlanadi — admin
@@ -476,7 +476,7 @@ class ShortAdmin(BaseModelAdmin):
     # bo'ladi: masalan multfilmga tushib qolgan filmni "movie" ga o'zgartiradi.
     list_editable = ("content_type", "priority")
     list_filter = (
-        "content_type", "is_published", "is_dead",
+        "content_type", "is_vertical", "is_published", "is_dead",
         "priority", "transcription_status", "created_at",
     )
     search_fields = ("title", "youtube_id", "youtube_link", "full_text")
@@ -509,7 +509,9 @@ class ShortAdmin(BaseModelAdmin):
                            "bilan tozalash mumkin. "
                            "`priority` — lentada oldinroq chiqarish (0 = oddiy, "
                            "katta raqam = oldinroq). Foydalanuvchi ko'rmagan "
-                           "yuqori priority'li video lentaning boshida chiqadi.",
+                           "yuqori priority'li video lentaning boshida chiqadi. "
+                           "Player shakli HAVOLADAN aniqlanadi: /shorts/ havolasi "
+                           "— tik (9:16), oddiy watch?v= havolasi — keng (16:9).",
         }),
         ("O'lik holat (auto)", {
             "fields": ("dead_reported_at", "dead_report_count"),

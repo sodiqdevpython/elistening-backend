@@ -113,7 +113,8 @@ class ShortListSerializer(ProtectedFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = Short
         fields = (
-            "id", "content_type", "youtube_id", "youtube_link", "title", "duration_sec",
+            "id", "content_type", "is_vertical",
+            "youtube_id", "youtube_link", "title", "duration_sec",
             "cefr_from", "cefr_to", "tags",
             "mcq_questions", "tfng_questions", "fill_gap_questions",
             "views", "likes", "dislikes", "created_at",

@@ -29,6 +29,21 @@ from django.utils.text import slugify
 from apps.common.models import CEFR, TimeStampedModel
 
 
+def is_shorts_url(url: str | None) -> bool:
+    """Havola YouTube **Shorts** havolasimi (ya'ni video TIK ko'rsatiladimi).
+
+    Foydalanuvchi belgilagan qoida: *"url da shorts/ bo'lsa short bo'ladi,
+    aks holda video"*. Bu `content_type` dan MUSTAQIL — Filmlar bo'limiga
+    qo'shilgan oddiy `watch?v=` havolasi ham keng (16:9) player oladi.
+
+    >>> is_shorts_url("https://youtube.com/shorts/abc12345678")
+    True
+    >>> is_shorts_url("https://www.youtube.com/watch?v=abc12345678")
+    False
+    """
+    return "/shorts/" in (url or "").lower()
+
+
 # `body`, `full_text`, `words_json` maydonlari juda katta bo'lishi mumkin
 # (transkripti uzun bo'lgan diktantda). Ro'yxatlarda va admin change_list'da
 # ular yuklanmasin — bu manager defer() bilan avtomatik chetlashtiradi.
@@ -451,6 +466,17 @@ class Short(TimeStampedModel):
                   "(10 gacha). Bir xil raqamlilar o'zaro tasodifiy tartibda.",
     )
 
+    # Player TIK (9:16) yoki KENG (16:9) chizilishi — HAVOLADAN aniqlanadi.
+    # Qoida foydalanuvchi tomonidan belgilangan: URL da `/shorts/` bo'lsa —
+    # short (tik), aks holda oddiy video (keng). `content_type` bunga
+    # ta'sir qilmaydi: Film ham, Yangilik ham `/shorts/` havolasi bilan
+    # kelsa tik, oddiy `watch?v=` havolasi bilan kelsa keng bo'ladi.
+    is_vertical = models.BooleanField(
+        "Tik video (Shorts)", default=True, db_index=True,
+        help_text="Havoladan avtomatik aniqlanadi: /shorts/ bo'lsa tik (9:16), "
+                  "aks holda oddiy keng video (16:9).",
+    )
+
     class Meta:
         # Menuda "Umumiy videolar" nomi ostida chiqadi — bir joyda barcha
         # turdagi videolarni (shorts + news + movies + cartoons) ko'rish va
@@ -468,6 +494,18 @@ class Short(TimeStampedModel):
 
     def __str__(self):
         return self.title or (self.youtube_id and f"[Short {self.youtube_id}]") or f"Short #{self.pk}"
+
+    def save(self, *args, **kwargs):
+        """`is_vertical` ni HAR safar havoladan qayta hisoblaydi.
+
+        Havola — yagona haqiqat manbai: admin qaysi bo'limga (Filmlar,
+        Yangiliklar, ...) qo'shganidan qat'i nazar, `/shorts/` havolasi tik
+        player, oddiy `watch?v=` havolasi esa keng player beradi.
+        Foydalanuvchi shikoyati: Filmlarga oddiy video qo'shilgan edi, lekin
+        u saytda ham, ilovada ham Shorts kabi tik ko'rsatilardi.
+        """
+        self.is_vertical = is_shorts_url(self.youtube_link)
+        super().save(*args, **kwargs)
 
 
 # --- Short proxy modellar (admin bo'limlari) -----------------------------
