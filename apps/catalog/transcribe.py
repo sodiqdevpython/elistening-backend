@@ -407,6 +407,15 @@ def transcribe_dictation(dictation: Dictation, *, language: str = "en") -> Dicta
             "transcription_status", "transcription_error", "is_published", "updated_at",
         ]
 
+        # Video-turdagi YouTube diktant (film/multfilm/news/video) = MEDIA. Aks
+        # holda `?media=1` feed (mobil bosh sahifa, /movies, /cartoons) uni
+        # ko'rsatmaydi va admin `is_media` ni belgilashni unutsa video umuman
+        # chiqmaydi.
+        _VIDEO_TYPES = {"movie", "cartoon", "news", "random_video"}
+        if dictation.youtube_link and not dictation.is_media and dictation.type in _VIDEO_TYPES:
+            dictation.is_media = True
+            update_fields.append("is_media")
+
         # CEFR darajasi bo'sh bo'lsa AI aniqlab beradi. Admin qo'lda o'rnatgan
         # darajani ustidan yozmaymiz — foydalanuvchi tanlovini hurmat qilamiz.
         if not (dictation.cefr_level or "").strip():

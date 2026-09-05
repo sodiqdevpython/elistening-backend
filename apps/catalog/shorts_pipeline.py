@@ -26,7 +26,7 @@ from .models import Short
 from .transcribe import (
     MAX_DURATION_SEC, MAX_FILE_SIZE_MB, MIN_DURATION_SEC,
     TranscriptionError, _download_youtube_audio, _friendly_openai_error,
-    _get_client, measure_audio_duration,
+    _get_client, fetch_youtube_title, measure_audio_duration,
 )
 
 logger = logging.getLogger(__name__)
@@ -576,8 +576,13 @@ def generate_short(short: Short) -> Short:
     yt_id = mock_data.extract_youtube_id(short.youtube_link) or meta.get("id") or ""
     if yt_id:
         short.youtube_id = yt_id
-    if meta.get("title") and not short.title:
-        short.title = meta["title"][:250]
+    if not short.title:
+        # yt-dlp meta VPS'da (data-markaz IP) ko'pincha sarlavhani BERMAYDI
+        # ("No title found in player responses") → bo'sh title. oEmbed esa yengil
+        # va bloklanmaydi (diktantlar shundan oladi) — fallback qilamiz.
+        title = (meta.get("title") or "").strip() or fetch_youtube_title(short.youtube_link)
+        if title:
+            short.title = title[:250]
     if meta.get("duration") and not short.duration_sec:
         short.duration_sec = int(meta["duration"])
 
