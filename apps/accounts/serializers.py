@@ -244,6 +244,10 @@ class LeaderboardRowSerializer(serializers.Serializer):
     # `initial` harfi ishlatiladi).
     avatar_url = serializers.CharField(allow_null=True, required=False)
     hours = serializers.FloatField()
+    # Xom soniyalar — mijoz kichik vaqtni ham (masalan 117s → "2 daq")
+    # ko'rsata olsin. `hours` 0.1 aniqlikda yaxlitlanadi (6 daqiqa), shu bois
+    # 6 daqiqadan kam faollik "0" bo'lib qolardi.
+    seconds = serializers.IntegerField(required=False, default=0)
     is_me = serializers.BooleanField()
 
 

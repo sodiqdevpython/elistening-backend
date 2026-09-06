@@ -81,7 +81,17 @@ class User(AbstractUser):
         ordering = ["-date_joined"]
 
     def __str__(self):
-        return self.display_name or self.username
+        # Admin autocomplete (masalan Obuna qo'shishda) natijada shu matnni
+        # ko'rsatadi. Faqat ism ko'rsatilsa BIR XIL ISMLILARNI ajratib
+        # bo'lmaydi, shu bois username va telegram_id ni ham qo'shamiz —
+        # ular bo'yicha qidirish allaqachon ishlaydi (UserAdmin.search_fields).
+        label = self.display_name or self.username or f"#{self.pk}"
+        extra = []
+        if self.username and self.username != label:
+            extra.append(f"@{self.username}")
+        if self.telegram_id:
+            extra.append(f"id:{self.telegram_id}")
+        return f"{label} · {' · '.join(extra)}" if extra else label
 
     def save(self, *args, **kwargs):
         if not self.invite_code:

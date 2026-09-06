@@ -443,6 +443,7 @@ def leaderboard(request):
                 "username": row["user__username"] or "",
                 "initial": (name or "?")[:1].upper(),
                 "hours": round(row["total"] / 3600, 1),
+                "seconds": row["total"],
                 # Keshda NISBIY yo'l saqlanadi ("avatars/x.jpg"). To'liq URL
                 # har so'rovda quriladi — aks holda kesh bitta host'ni
                 # yodda saqlab qolardi (LAN IP / domen aralashib ketardi).
@@ -470,11 +471,14 @@ def leaderboard(request):
     ]
 
     my_hours = 0.0
+    my_seconds = 0
     if me_id:
-        my_hours = round(request.user.seconds_in_period(period) / 3600, 1)
+        my_seconds = request.user.seconds_in_period(period)
+        my_hours = round(my_seconds / 3600, 1)
 
     return Response({
         "period": period,
         "my_hours": my_hours,
+        "my_seconds": my_seconds,
         "results": LeaderboardRowSerializer(data, many=True).data,
     })
