@@ -12,9 +12,9 @@ from django.db import migrations
 
 # code,   nom,           narx,  shorts, video, dictation, ielts, is_default, order
 PLANS = [
-    ("free", "Qaldirg'och",     0,    8,    2,    2,    0, True,  0),
-    ("plus", "Jo'shqin",    23000,   30,   10, None,    2, False, 1),
-    ("pro",  "Bo'talog'im", 32000, None, None, None, None, False, 2),
+    ("free", "Oddiy",      0,    8,    2,    2,    0, True,  0),
+    ("plus", "O'rta",  23000,   30,   10, None,    2, False, 1),
+    ("pro",  "Yuqori", 32000, None, None, None, None, False, 2),
 ]
 
 

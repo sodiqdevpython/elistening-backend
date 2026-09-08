@@ -30,8 +30,8 @@ class PlanAdmin(BaseModelAdmin):
 class SubscriptionAdmin(BaseModelAdmin):
     """Foydalanuvchiga STATUS (tarif) berish/o'zgartirish shu yerda.
 
-    `plan` maydoni oddiy DROPDOWN — 3 status ko'rinadi (Qaldirg'och / Jo'shqin
-    / Bo'talog'im), qidirishning hojati yo'q. Foydalanuvchini tanlab, status
+    `plan` maydoni oddiy DROPDOWN — 3 status ko'rinadi (Oddiy / O'rta /
+    Yuqori), qidirishning hojati yo'q. Foydalanuvchini tanlab, status
     berasiz; limitlar shu statusga qarab ishlaydi. Har foydalanuvchida BITTA
     obuna — mavjud bo'lsa uni tahrirlab statusni almashtiriladi.
     """

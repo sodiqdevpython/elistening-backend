@@ -35,7 +35,7 @@ class Plan(OrderedModel):
     #: Tarif kodi → creative STATUS nomi. STATIC (bazadagi nomga bog'liq emas),
     #: tarjimasiz — frontend/mobil bilan bir xil. Admin ro'yxati/dropdown va
     #: str(plan) shu nomni ko'rsatadi.
-    STATUS_NAMES = {"free": "Qaldirg'och", "plus": "Jo'shqin", "pro": "Bo'talog'im"}
+    STATUS_NAMES = {"free": "Oddiy", "plus": "O'rta", "pro": "Yuqori"}
 
     class Meta(OrderedModel.Meta):
         verbose_name = "Tarif"

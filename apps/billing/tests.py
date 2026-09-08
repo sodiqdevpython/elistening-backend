@@ -48,7 +48,10 @@ class PlanUpgradeNotifyTests(TestCase):
         self.commit(lambda: Subscription.objects.create(user=self.user, plan=self.plus, expires_at=until))
         self.assertEqual(self.messages().count(), 1)
         text = self.messages().first().text
-        self.assertIn("Plus", text)
+        # status nomi (code 'plus' -> STATUS_NAMES). Apostrof HTML'da
+        # `&#x27;` ga o'raladi (Telegram uni to'g'ri ko'rsatadi).
+        from html import escape
+        self.assertIn(escape("O'rta"), text)
         self.assertIn(timezone.localtime(until).strftime("%d.%m.%Y"), text)
 
     def test_free_plan_is_not_an_upgrade(self):
@@ -70,7 +73,7 @@ class PlanUpgradeNotifyTests(TestCase):
 
         self.commit(upgrade)
         self.assertEqual(self.messages().count(), 2)
-        self.assertIn("Pro", self.messages().last().text)
+        self.assertIn("Yuqori", self.messages().last().text)  # code 'pro' -> STATUS_NAMES
 
     def test_saving_without_changes_does_not_resend(self):
         sub = self.commit(lambda: Subscription.objects.create(user=self.user, plan=self.plus))

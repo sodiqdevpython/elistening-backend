@@ -50,17 +50,11 @@ def _format_expiry(expires_at, lang: str) -> str:
     return timezone.localtime(expires_at).strftime("%d.%m.%Y")
 
 
-# Botdagi tabrik xabari HAQIQIY tarif nomini (Plus / Pro) ko'rsatadi —
-# ilova/web dagi "status" nomlari (Jo'shqin / Bo'talog'im) emas. Foydalanuvchi
-# aynan shuni so'radi: status nomi hamma joyda, LEKIN botdagi tarif tabrigida
-# Plus/Pro tursin. `name_uz`/`name_en` migratsiyada status nomi bilan
-# to'ldirilgan, shu bois nom `code` dan olinadi. (Xabar faqat bepul bo'lmagan
-# tarif uchun ketadi — ya'ni amalda faqat Plus/Pro.)
-_TARIFF_NAME = {"free": "Free", "plus": "Plus", "pro": "Pro"}
-
-
+# Botdagi tabrik xabari ham BUTUN tizimdagi status nomini ishlatadi
+# (Oddiy / O'rta / Yuqori) — `Plan.status_name` (`STATUS_NAMES`, `code` dan).
+# Foydalanuvchi: hamma joyda — frontend, mobil, bot — bir xil nom bo'lsin.
 def _tariff_name(plan) -> str:
-    return _TARIFF_NAME.get(plan.code, plan.name_uz)
+    return plan.status_name
 
 
 def _reason_line(reason: str, lang: str) -> str:
@@ -85,7 +79,7 @@ def _build_text(event: SubscriptionEvent, lang: str) -> str:
     # shu bois `*qalin*` markdown ISHLAMAYDI (yulduzchalar shundoq chiqadi).
     # Matnga tushadigan hamma qiymat `escape` qilinadi: nomda `<` bo'lsa
     # Telegram xabarni umuman yubormaydi.
-    # Botda HAQIQIY tarif nomi — Plus / Pro (status nomi emas).
+    # Status nomi — Oddiy / O'rta / Yuqori (butun tizimda bir xil).
     plan_name = escape(_tariff_name(event.plan))
     until = _format_expiry(event.expires_at, lang)
     reason = _reason_line(event.reason, lang)
