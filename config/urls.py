@@ -13,6 +13,10 @@ from apps.accounts.refresh import SessionTokenRefreshView
 from apps.billing import views as billing_views
 from apps.catalog import views as catalog_views
 from apps.catalog import legacy_views
+from apps.billing import wallet_views
+from apps.click import api as click_api
+from apps.click import views as click_views
+from apps.paynet import views as paynet_views
 
 admin.site.site_header = "eListening.uz boshqaruvi"
 admin.site.site_title = "eListening.uz"
@@ -65,11 +69,29 @@ api_patterns = [
     path("billing/plans/", billing_views.plans, name="plans"),
     path("billing/subscribe/", billing_views.subscribe, name="subscribe"),
 
+    # Hamyon — provayderdan MUSTAQIL (Paynet ham, Click ham shunga tushadi)
+    path("billing/wallet/", wallet_views.wallet, name="wallet"),
+    path("billing/wallet/intent/", wallet_views.intent, name="wallet-intent"),
+    path("billing/wallet/intent/cancel/", wallet_views.cancel_intent, name="wallet-intent-cancel"),
+    path("billing/wallet/buy/", wallet_views.buy, name="wallet-buy"),
+
+    # Click checkout — buyurtma yaratib my.click.uz havolasini beradi
+    path("billing/click/checkout/", click_api.checkout, name="click-checkout"),
+    path("billing/click/orders/<int:pk>/", click_api.order_status, name="click-order"),
+
     path("", include(router.urls)),
 ]
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Paynet JSON-RPC — `api_patterns` ICHIDA emas, ataylab alohida:
+    # u DRF emas (Basic auth + IP ro'yxati, `apps/paynet/views.py`) va
+    # nginx'da faqat `paynet.listening.uz` subdomenida ochiladi.
+    path("api/paynet/", paynet_views.endpoint, name="paynet-rpc"),
+    # Click SHOP-API — Click serveri chaqiradi (MD5 imzo bilan himoyalangan).
+    # `api_patterns` ichida EMAS: DRF emas va form-urlencoded qabul qiladi.
+    path("api/click/prepare/", click_views.prepare, name="click-prepare"),
+    path("api/click/complete/", click_views.complete, name="click-complete"),
     path("api/", include(api_patterns)),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),

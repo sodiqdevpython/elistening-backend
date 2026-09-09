@@ -1,7 +1,12 @@
 """Tariflar API'si.
 
-To'lov OQIMI HOZIRCHA YO'Q. `subscribe` faqat qaysi tarif tanlanganini
-belgilaydi va to'lov integratsiyasi ulanmaganini aytadi.
+To'lov **Paynet** orqali (`apps/paynet`). Paynet redirect'li checkout EMAS:
+foydalanuvchi Paynet ilovasi/kassasida o'z Telegram chat ID'sini kiritib
+to'laydi, pul hamyonga tushadi va tarif shu yerdan yoqiladi.
+
+Shu bois `subscribe` pullik tarif uchun TO'LOV NIYATINI saqlaydi va to'lash
+yo'riqnomasini qaytaradi (`apps/billing/wallet_views.py`) — mijoz uchun bitta
+endpoint yetarli bo'lsin.
 """
 from django.core.cache import cache
 from rest_framework import status
@@ -55,8 +60,8 @@ def subscribe(request):
         grant_plan(request.user, plan, 1, Reason.MANUAL, note="Narxsiz tarif")
         return Response({"ok": True, "plan": plan.code})
 
-    return Response(
-        {"detail": "To'lov tizimi hali ulanmagan. Tez orada Click orqali ishlaydi.",
-         "plan": plan.code},
-        status=status.HTTP_501_NOT_IMPLEMENTED,
-    )
+    # Pullik tarif — Paynet hamyoni orqali. Balans yetsa DARROV yoqiladi,
+    # aks holda niyat saqlanib, javobda to'lov yo'riqnomasi qaytadi.
+    from .wallet_views import start_purchase
+
+    return start_purchase(request.user, request.data)

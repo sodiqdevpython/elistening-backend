@@ -1,8 +1,17 @@
-"""Tariflar va obunalar.
+"""Tariflar, obunalar va HAMYON.
 
-To'lov tizimi (Click) HOZIRCHA ULANMAGAN — faqat ma'lumot modeli va admin
-CRUD mavjud. `Payment` modeli kelajakdagi integratsiya uchun seam sifatida
-turadi; hech qanday tashqi so'rov yuborilmaydi.
+To'lov ikki provayder orqali keladi va ikkalasi ham SHU YERDAGI `Wallet` ga
+yozadi:
+
+* **Paynet** (`apps/paynet`) — teskari model: Paynet bizga JSON-RPC yuboradi,
+  foydalanuvchi kassada Telegram chat ID bilan to'laydi.
+* **Click** (`apps/click`) — redirect: foydalanuvchi my.click.uz ga o'tadi,
+  Click esa bizning Prepare/Complete endpointlarimizni chaqiradi.
+
+Hamyon ATAYLAB shu yerda (provayder ilovasida emas): pul bitta joyda
+turadi, tarif esa bitta yo'l bilan beriladi (`grants.grant_plan`). Aks holda
+har provayder o'z balansini yuritib, "qaysi puldan sotib olindi" degan
+chalkashlik chiqardi.
 """
 from django.conf import settings
 from django.db import models
@@ -215,6 +224,57 @@ class Payment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user} — {self.amount_uzs} ({self.status})"
+
+
+class Wallet(TimeStampedModel):
+    """Foydalanuvchi hamyoni — har foydalanuvchida bittadan, provayderdan MUSTAQIL.
+
+    Balans BEVOSITA o'zgartirilmaydi: `billing/wallet.py` ichidagi funksiyalar
+    uni har doim `select_for_update` ostida o'qib yangilaydi. Aks holda bir
+    vaqtda kelgan ikki to'lov (yoki to'lov + bekor qilish) bir-birining
+    yozuvini bosib ketishi mumkin edi.
+
+    **Nega pul TIYINDA.** Paynet butun interfeys bo'ylab tiyin ishlatadi.
+    So'mga aylantirsak har chegarada bo'lish/yaxlitlash paydo bo'lardi va bir
+    tiyin yo'qolishi kunlik sverkani buzardi. Butun son — yaxlitlash xatosi
+    umuman yo'q. (Click so'mda ishlaydi, shu bois `apps/click` chegarada
+    100 ga ko'paytiradi.)
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, verbose_name="Foydalanuvchi",
+        on_delete=models.CASCADE, related_name="wallet",
+    )
+    balance_tiyin = models.BigIntegerField("Balans (tiyin)", default=0)
+
+    # ── To'lov NIYATI ────────────────────────────────────────────────────
+    # Saytda "O'rta tarifni sotib olish" bosilganda shu ikkisi to'ladi, va
+    # pul kelganda tarif AVTOMATIK yoqiladi.
+    #
+    # Nega niyat kerak: PAYNET to'lovda "qaysi tarif" degan maydon bermaydi,
+    # faqat summa keladi. Summaga qarab TAXMIN qilish xavfli — 23 000 so'm
+    # ham "O'rta 1 oy", ham "Yuqori tarifga to'plash" bo'lishi mumkin.
+    # (Click'da bunday muammo yo'q: u yerda buyurtma bor va tarif aniq.)
+    pending_plan = models.ForeignKey(
+        Plan, verbose_name="Kutilayotgan tarif", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    pending_months = models.PositiveSmallIntegerField("Kutilayotgan oy", default=1)
+
+    class Meta:
+        verbose_name = "Hamyon"
+        verbose_name_plural = "Hamyonlar"
+
+    def __str__(self):
+        return f"{self.user} — {self.balance_label}"
+
+    @property
+    def balance_uzs(self) -> int:
+        return self.balance_tiyin // 100
+
+    @property
+    def balance_label(self) -> str:
+        return f"{self.balance_uzs:,}".replace(",", " ") + " so'm"
 
 
 class DailyUsage(TimeStampedModel):

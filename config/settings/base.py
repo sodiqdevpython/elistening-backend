@@ -68,6 +68,8 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.catalog",
     "apps.billing",
+    "apps.paynet",
+    "apps.click",
     "apps.telegrambot",
 ]
 
@@ -282,3 +284,56 @@ CLAUDE_API_KEY = env("CLAUDE_API_KEY")   # kelajakda Haiku uchun
 
 OTP_TTL_SECONDS = 60
 OTP_CODE_LENGTH = 6
+
+# --- Paynet (universal WEB-servis, JSON-RPC 2.0) ---------------------------
+# Paynet BIZGA murojaat qiladi (biz "postavshik biling"miz), shu bois bu yerda
+# tashqi API kaliti YO'Q — aksincha, Paynet kiradigan login/parol turadi.
+# Qiymatlarni Paynet shartnomaga ilova qilingan "Таблица 1" da beradi.
+PAYNET_LOGIN = env("PAYNET_LOGIN", default="")
+PAYNET_PASSWORD = env("PAYNET_PASSWORD", default="")
+
+# Bizning servis(lar) ID'si — Paynet beradi. BO'SH bo'lsa har qanday ID
+# qabul qilinadi (shartnoma imzolangunicha ID ma'lum emas); prod'da
+# to'ldirilishi SHART, aks holda begona servisning to'lovi bizga tushadi.
+PAYNET_SERVICE_IDS = env.list("PAYNET_SERVICE_IDS", default=[])
+PAYNET_SERVICE_NAME = env("PAYNET_SERVICE_NAME", default="listening.uz")
+
+# Приложение №2, 4.2-band — Paynet FAQAT shu tarmoqlardan keladi.
+# Bo'sh ro'yxat prod'da "hech kim kira olmaydi" degani (`security.ip_allowed`):
+# xavfsizlik sozlamasini unutish "hammaga ochiq" ga aylanmasligi kerak.
+PAYNET_ALLOWED_NETS = env.list(
+    "PAYNET_ALLOWED_NETS", default=["213.230.106.112/28", "213.230.65.80/28"],
+)
+
+# To'lovda `fields` ichidagi identifikator maydonining nomi. Bizda bu
+# foydalanuvchining Telegram chat ID'si (Таблица 3 shu nom bilan to'ldiriladi).
+PAYNET_CLIENT_FIELD = env("PAYNET_CLIENT_FIELD", default="client_id")
+
+# Summa chegaralari TIYINDA (1 so'm = 100 tiyin).
+# Min 1 000 so'm — undan pastda tarif uchun ma'no yo'q, lekin sverkada qator
+# to'playdi. Max 1 000 000 so'm — nol xato bilan kiritilgan summadan himoya.
+PAYNET_MIN_AMOUNT_TIYIN = env.int("PAYNET_MIN_AMOUNT_TIYIN", default=100_000)
+PAYNET_MAX_AMOUNT_TIYIN = env.int("PAYNET_MAX_AMOUNT_TIYIN", default=100_000_000)
+
+# --- Click (SHOP-API + to'lov havolasi) ------------------------------------
+# Click PAYNET'DAN FARQLI: u redirect'li checkout. Foydalanuvchi my.click.uz
+# ga o'tadi, Click esa bizning Prepare/Complete endpointlarimizni chaqiradi.
+# Qiymatlar merchant.click.uz kabinetidan olinadi.
+CLICK_SERVICE_ID = env("CLICK_SERVICE_ID", default="")
+CLICK_MERCHANT_ID = env("CLICK_MERCHANT_ID", default="")
+
+# Imzo kaliti. BU INTEGRATSIYANING YAGONA XAVFSIZLIK CHEGARASI: Click ommaviy
+# IP ro'yxati bermaydi, soxta "to'lov o'tdi" so'rovidan faqat shu kalit
+# himoya qiladi. Bo'sh bo'lsa HECH QANDAY so'rov qabul qilinmaydi
+# (`apps/click/signature.py`) — "kalit yo'q, tekshirmaymiz" degan yo'l yo'q.
+CLICK_SECRET_KEY = env("CLICK_SECRET_KEY", default="")
+
+# Merchant API (invoys, reversal) uchun — hozircha ishlatilmaydi, faqat
+# to'lov havolasi + Prepare/Complete sxemasi ulangan.
+CLICK_MERCHANT_USER_ID = env("CLICK_MERCHANT_USER_ID", default="")
+
+CLICK_PAY_URL = env("CLICK_PAY_URL", default="https://my.click.uz/services/pay")
+# To'lovdan keyin foydalanuvchi shu manzilga qaytadi. Natijani sahifa
+# `GET /api/billing/click/orders/<id>/` dan o'qiydi — `return_url` ga
+# ISHONMAYDI (uni foydalanuvchi qo'lda ham ochishi mumkin).
+CLICK_RETURN_URL = env("CLICK_RETURN_URL", default=f"{SITE_URL}/profile/billing")
