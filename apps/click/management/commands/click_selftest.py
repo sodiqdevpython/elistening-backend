@@ -118,7 +118,9 @@ class Command(BaseCommand):
         client_id = str(options["client_id"]).strip()
 
         self._head("0. Sozlamalar")
-        missing = [n for n in ("CLICK_SERVICE_ID", "CLICK_MERCHANT_ID", "CLICK_SECRET_KEY")
+        # `CLICK_MERCHANT_ID` bu ro'yxatda ATAYLAB yo'q — u ixtiyoriy
+        # (kabinetda bunday maydon yo'q; batafsil `apps/click/links.py`).
+        missing = [n for n in ("CLICK_SERVICE_ID", "CLICK_SECRET_KEY")
                    if not getattr(settings, n)]
         if missing:
             raise CommandError(
@@ -127,9 +129,12 @@ class Command(BaseCommand):
                 "`docker compose up -d --force-recreate web` qiling."
             )
         self._ok(f"CLICK_SERVICE_ID  = {settings.CLICK_SERVICE_ID}")
-        self._ok(f"CLICK_MERCHANT_ID = {settings.CLICK_MERCHANT_ID}")
         self._ok(f"CLICK_SECRET_KEY  = {'*' * len(settings.CLICK_SECRET_KEY)} "
                  f"({len(settings.CLICK_SECRET_KEY)} belgi)")
+        if settings.CLICK_MERCHANT_ID:
+            self._ok(f"CLICK_MERCHANT_ID = {settings.CLICK_MERCHANT_ID}")
+        else:
+            self._info("CLICK_MERCHANT_ID = bo'sh (ixtiyoriy — havolaga qo'shilmaydi)")
 
         user = User.objects.filter(telegram_id=int(client_id)).first()
         if user is None:
