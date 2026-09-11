@@ -24,7 +24,9 @@ from .models import ClickOrder
 @permission_classes([IsAuthenticated])
 def checkout(request):
     """Buyurtma yaratadi (yoki mavjudini qayta ishlatadi) va havola qaytaradi."""
-    if not (settings.CLICK_SERVICE_ID and settings.CLICK_MERCHANT_ID):
+    # `merchant_id` SHART EMAS (`links.py` izohiga qarang) — havola usiz ham
+    # yasaladi. Kerak bo'lganlari: servis raqami va imzo kaliti.
+    if not (settings.CLICK_SERVICE_ID and settings.CLICK_SECRET_KEY):
         return Response({"detail": "Click hali sozlanmagan"},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
 

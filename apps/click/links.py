@@ -24,7 +24,6 @@ from django.conf import settings
 def payment_url(order) -> str:
     params = {
         "service_id": settings.CLICK_SERVICE_ID,
-        "merchant_id": settings.CLICK_MERCHANT_ID,
         # Click so'mda kutadi. `Decimal` ga MAJBURAN aylantiramiz: yangi
         # yaratilgan obyektda `amount_uzs` hali `int` bo'lib turadi (Django
         # maydonni faqat bazadan o'qiganda Decimal qiladi). `normalize`
@@ -38,6 +37,16 @@ def payment_url(order) -> str:
         # so'rovi tasdiqlaydi.
         "return_url": _with_order(settings.CLICK_RETURN_URL, order.pk),
     }
+    # `merchant_id` IXTIYORIY. Click'ning O'Z referens kutubxonasida
+    # (`click-integration-php/click/configs.php`) u sozlamada turadi, lekin
+    # kodning HECH QAYERIDA ishlatilmaydi — na Shop-API imzosida, na Merchant
+    # API'da. Kabinetda ham (merchant.click.uz) bunday maydon ko'rinmaydi.
+    # Shu bois: berilgan bo'lsa qo'shamiz, bo'lmasa havola usiz ketadi —
+    # aks holda butun Click tugmasi mavjud bo'lmagan qiymat tufayli
+    # bloklanib qolardi.
+    if settings.CLICK_MERCHANT_ID:
+        params["merchant_id"] = settings.CLICK_MERCHANT_ID
+
     return f"{settings.CLICK_PAY_URL}?{urlencode(params)}"
 
 

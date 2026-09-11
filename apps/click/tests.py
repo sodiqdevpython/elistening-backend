@@ -237,10 +237,25 @@ class CheckoutApiTests(ClickBase):
         response = self.api.post("/api/billing/click/checkout/", {"plan": "free"})
         self.assertEqual(response.status_code, 400)
 
-    @override_settings(CLICK_SERVICE_ID="", CLICK_MERCHANT_ID="")
+    @override_settings(CLICK_SERVICE_ID="", CLICK_SECRET_KEY="")
     def test_unconfigured_click_is_503(self):
         response = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
         self.assertEqual(response.status_code, 503)
+
+    @override_settings(CLICK_MERCHANT_ID="")
+    def test_works_without_merchant_id(self):
+        """`merchant_id` kabinetda YO'Q va Click'ning o'z kutubxonasida ham
+        ishlatilmaydi — usiz ham havola yasalishi va tugma ishlashi kerak."""
+        response = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
+        self.assertEqual(response.status_code, 200)
+        url = response.data["pay_url"]
+        self.assertNotIn("merchant_id", url)
+        self.assertIn(f"service_id={SERVICE_ID}", url)
+
+    @override_settings(CLICK_MERCHANT_ID="")
+    def test_click_button_visible_without_merchant_id(self):
+        response = self.api.get("/api/billing/wallet/")
+        self.assertTrue(response.data["providers"]["click"]["enabled"])
 
     def test_order_status_reflects_payment(self):
         created = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})

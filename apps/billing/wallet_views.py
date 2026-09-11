@@ -55,7 +55,8 @@ def wallet_payload(user, wallet: Wallet) -> dict:
         # ── Provayderlar ────────────────────────────────────────────────
         "providers": {
             # Click — tugma bosiladi, boshqa hech narsa kerak emas.
-            "click": {"enabled": bool(settings.CLICK_SERVICE_ID and settings.CLICK_MERCHANT_ID)},
+            # `merchant_id` shart emas — `apps/click/links.py` izohiga qarang.
+            "click": {"enabled": bool(settings.CLICK_SERVICE_ID and settings.CLICK_SECRET_KEY)},
             # Paynet — foydalanuvchi kassada AYNAN shu raqamni kiritadi.
             # `telegram_id` bo'lmasa (admin qo'lda yaratgan akkaunt) to'lov
             # qilib bo'lmaydi; interfeys shuni ochiq aytishi kerak, jim qolmasligi.
