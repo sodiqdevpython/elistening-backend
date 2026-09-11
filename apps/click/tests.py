@@ -223,6 +223,49 @@ class CheckoutApiTests(ClickBase):
         self.assertIn(f"transaction_param={response.data['order_id']}", url)
         self.assertIn("amount=23000", url)
 
+    def test_checkout_asks_only_for_the_missing_part(self):
+        """Balansda pul bo'lsa, Click TO'LIQ narxni emas, YETMAGANINI so'raydi."""
+        Wallet.objects.update_or_create(user=self.user, defaults={'balance_tiyin': 1_000_000})   # 10 000 so'm
+        response = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["amount_uzs"], 13000)   # 23 000 - 10 000
+        self.assertEqual(response.data["price_uzs"], 23000)
+        self.assertIn("amount=13000", response.data["pay_url"])
+
+    @override_settings(CLICK_MIN_AMOUNT_UZS=1000)
+    def test_missing_below_minimum_is_raised_to_minimum(self):
+        """Click minimaldan kichik summani qabul qilmaydi — ko'taramiz."""
+        Wallet.objects.update_or_create(user=self.user, defaults={'balance_tiyin': 2_270_000})   # 22 700 so'm
+        response = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
+        self.assertEqual(response.data["amount_uzs"], 1000)   # 300 emas
+        self.assertEqual(response.data["extra_uzs"], 700)     # ortiqchasi hamyonda qoladi
+
+    def test_checkout_refused_when_balance_is_enough(self):
+        """Pul yetsa to'lov shart emas — hisobdan yoqiladi."""
+        Wallet.objects.update_or_create(user=self.user, defaults={'balance_tiyin': 2_300_000})
+        response = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.data["enough"])
+
+    def test_existing_order_amount_is_refreshed(self):
+        """Balans o'zgargach eski buyurtma ESKI summa bilan qolib ketmasin."""
+        first = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
+        self.assertEqual(first.data["amount_uzs"], 23000)
+
+        Wallet.objects.update_or_create(user=self.user, defaults={'balance_tiyin': 1_000_000})
+        second = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
+        self.assertEqual(second.data["order_id"], first.data["order_id"])
+        self.assertEqual(second.data["amount_uzs"], 13000)
+
+    def test_higher_plan_gets_its_own_order(self):
+        """Yuqori tarifga o'tmoqchi bo'lsa — alohida buyurtma, to'g'ri summa."""
+        Plan.objects.create(code="pro", name_uz="Yuqori", name_en="Pro", price_uzs=32000)
+        Wallet.objects.update_or_create(user=self.user, defaults={'balance_tiyin': 1_000_000})
+        plus = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})
+        pro = self.api.post("/api/billing/click/checkout/", {"plan": "pro"})
+        self.assertNotEqual(plus.data["order_id"], pro.data["order_id"])
+        self.assertEqual(pro.data["amount_uzs"], 22000)   # 32 000 - 10 000
+
     def test_checkout_reuses_unpaid_order(self):
         """Tugma ikki marta bosilsa ikkita "osilgan" buyurtma qolmaydi."""
         first = self.api.post("/api/billing/click/checkout/", {"plan": "plus"})

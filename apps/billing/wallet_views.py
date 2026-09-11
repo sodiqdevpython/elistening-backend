@@ -56,7 +56,12 @@ def wallet_payload(user, wallet: Wallet) -> dict:
         "providers": {
             # Click — tugma bosiladi, boshqa hech narsa kerak emas.
             # `merchant_id` shart emas — `apps/click/links.py` izohiga qarang.
-            "click": {"enabled": bool(settings.CLICK_SERVICE_ID and settings.CLICK_SECRET_KEY)},
+            "click": {
+                "enabled": bool(settings.CLICK_SERVICE_ID and settings.CLICK_SECRET_KEY),
+                # Mijoz tugmada "qancha to'lanadi" ni ko'rsatishi uchun:
+                # yetmayotgan qism shundan kichik bo'lsa, shu summa olinadi.
+                "min_uzs": int(settings.CLICK_MIN_AMOUNT_UZS),
+            },
             # Paynet — foydalanuvchi kassada AYNAN shu raqamni kiritadi.
             # `telegram_id` bo'lmasa (admin qo'lda yaratgan akkaunt) to'lov
             # qilib bo'lmaydi; interfeys shuni ochiq aytishi kerak, jim qolmasligi.

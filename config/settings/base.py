@@ -332,6 +332,12 @@ CLICK_SECRET_KEY = env("CLICK_SECRET_KEY", default="")
 # to'lov havolasi + Prepare/Complete sxemasi ulangan.
 CLICK_MERCHANT_USER_ID = env("CLICK_MERCHANT_USER_ID", default="")
 
+# Click kabinetida servis uchun belgilangan MINIMAL summa (so'mda).
+# Undan kichik summa bilan havola yasasak, Click to'lovni rad etadi. Shu bois
+# "yetmayotgan qism" shundan kichik chiqsa, shu qiymatgacha ko'tariladi —
+# ortiqchasi foydalanuvchining hamyonida qoladi, yo'qolmaydi.
+CLICK_MIN_AMOUNT_UZS = env.int("CLICK_MIN_AMOUNT_UZS", default=1000)
+
 CLICK_PAY_URL = env("CLICK_PAY_URL", default="https://my.click.uz/services/pay")
 # To'lovdan keyin foydalanuvchi shu manzilga qaytadi. Natijani sahifa
 # `GET /api/billing/click/orders/<id>/` dan o'qiydi — `return_url` ga
