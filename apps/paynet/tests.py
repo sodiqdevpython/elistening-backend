@@ -122,15 +122,17 @@ class ProtocolTests(PaynetBase):
         """Hujjat misollarining o'zida `" CancelTransaction"` deb yozilgan."""
         raw = json.dumps({"jsonrpc": "2.0", "id": 1, "method": " GetInformation",
                           "params": {"serviceId": 1, "fields": {"client_id": "777"}}})
-        self.assertEqual(self.call("x", raw=raw).json()["result"]["status"], errors.OK)
+        self.assertEqual(self.call("x", raw=raw).json()["result"]["status"], "0")
 
 
 class GetInformationTests(PaynetBase):
     def test_known_client(self):
-        Wallet.objects.create(user=self.user, balance_tiyin=500)
+        Wallet.objects.create(user=self.user, balance_tiyin=2_300_000)   # 23 000 so'm
         result = self.result("GetInformation", {"serviceId": 1, "fields": {"client_id": "777"}})
-        self.assertEqual(result["status"], errors.OK)
-        self.assertEqual(result["fields"], {"name": "Ali", "balance": 500})
+        # Paynet talabi (11.09.2026): `status` SATR, balans SO'MDA.
+        self.assertEqual(result["status"], "0")
+        self.assertIsInstance(result["status"], str)
+        self.assertEqual(result["fields"], {"name": "Ali", "balance": 23000})
 
     def test_unknown_client(self):
         code = self.error_code("GetInformation", {"serviceId": 1, "fields": {"client_id": "404404"}})
@@ -155,14 +157,22 @@ class PerformTransactionTests(PaynetBase):
     def test_payment_credits_wallet(self):
         result = self.pay(amount=2_300_000)
         self.assertEqual(Wallet.objects.get(user=self.user).balance_tiyin, 2_300_000)
-        self.assertEqual(result["fields"]["balance"], 2_300_000)
+        # Javobdagi balans SO'MDA (Paynet talabi), bazada esa tiyinda.
+        self.assertEqual(result["fields"]["balance"], 23000)
         self.assertEqual(result["providerTrnId"], PaynetTransaction.objects.get().pk)
 
-    def test_repeat_is_idempotent(self):
-        """Paynet retry qilsa: bir xil javob, pul IKKI MARTA yozilmaydi."""
-        first = self.pay(trn_id=555)
-        second = self.pay(trn_id=555)
-        self.assertEqual(first["providerTrnId"], second["providerTrnId"])
+    def test_repeat_returns_201(self):
+        """Bir xil `transactionId` bilan takror kelsa — 201 (Paynet talabi).
+
+        Pul baribir ikki marta yozilmaydi: buni javob kodi emas,
+        `transaction_id` ustidagi UNIQUE indeks kafolatlaydi.
+        """
+        self.pay(trn_id=555)
+        code = self.error_code("PerformTransaction", {
+            "amount": 2_300_000, "serviceId": 1, "transactionId": 555,
+            "fields": {"client_id": "777"},
+        })
+        self.assertEqual(code, errors.TRN_EXISTS)
         self.assertEqual(PaynetTransaction.objects.count(), 1)
         self.assertEqual(Wallet.objects.get(user=self.user).balance_tiyin, 2_300_000)
 
@@ -272,6 +282,10 @@ class GetStatementTests(PaynetBase):
         })
         self.assertEqual([s["transactionId"] for s in result["statements"]], [801])
         self.assertEqual(result["statements"][0]["amount"], 1_000_000)
+        # Paynet talabi: `transactionId` SON bo'lishi shart (satr emas).
+        row = result["statements"][0]
+        for field in ("transactionId", "providerTrnId", "amount"):
+            self.assertIsInstance(row[field], int, msg=f"{field} int bo'lishi kerak")
 
     def test_reversed_period_is_rejected(self):
         code = self.error_code("GetStatement", {

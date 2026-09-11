@@ -92,6 +92,21 @@ def resolve_user(fields):
     return user
 
 
+def balance_value(wallet) -> int:
+    """Paynet'ga qaytariladigan balans — **SO'MDA**.
+
+    Diqqat: `amount` teskari yo'nalishda TIYINDA keladi va Приложение №2
+    Таблица 4 ham balansni "тийин" deb belgilagan. Ammo Paynet integratsiya
+    tekshiruvida (11.09.2026) balansni **so'mda** qaytarish talab qilindi —
+    kassa ekranida odam o'qiydigan raqam turishi kerak.
+
+    Birlikni qaytarib o'zgartirish kerak bo'lsa — FAQAT shu funksiya:
+    `GetInformation` ham, `PerformTransaction` ham shundan oladi, ya'ni
+    ikkalasi hech qachon ajralib ketmaydi.
+    """
+    return wallet.balance_tiyin // 100
+
+
 def check_amount(raw) -> int:
     """Summani tekshiradi (tiyinda) — chegaralar `settings` dan."""
     # `bool` — `int` ning avlodi: `True` 1 tiyinga aylanib ketmasin.
@@ -128,13 +143,16 @@ def get_information(params: dict) -> dict:
     wallet = get_wallet(user)
 
     return {
-        "status": errors.OK,
+        # SATR, son emas. Spetsifikatsiya jadvali `Number` deydi, ammo
+        # 3.1-dagi MISOL `"status": "0"` ko'rsatadi va Paynet integratsiya
+        # tekshiruvida aynan satr talab qilindi (11.09.2026).
+        "status": str(errors.OK),
         "timestamp": now_str(),
         "fields": {
             # Kassir chekdan oldin ismni ko'rib, to'g'ri odamga to'layotganini
             # tasdiqlaydi — noto'g'ri ID bilan to'lovlarning asosiy oldini olish.
             "name": user.display_name or user.username or f"#{user.pk}",
-            "balance": wallet.balance_tiyin,
+            "balance": balance_value(wallet),
         },
     }
 
@@ -150,7 +168,7 @@ def perform_transaction(params: dict) -> dict:
     # ── Idempotentlik: allaqachon bormi? ──
     existing = PaynetTransaction.objects.filter(transaction_id=trn_id).first()
     if existing is not None:
-        return _repeat_or_conflict(existing, service_id, amount, user)
+        return _already_exists(existing)
 
     try:
         with transaction.atomic():
@@ -173,7 +191,7 @@ def perform_transaction(params: dict) -> dict:
         existing = PaynetTransaction.objects.filter(transaction_id=trn_id).first()
         if existing is None:
             raise
-        return _repeat_or_conflict(existing, service_id, amount, user)
+        return _already_exists(existing)
 
     try_pending_plan(user)
 
@@ -185,36 +203,28 @@ def perform_transaction(params: dict) -> dict:
             # Таблица 4 — to'lovdan keyingi balans MAJBURIY. Yangi qiymatni
             # bazadan qayta o'qiymiz: `try_pending_plan` uni kamaytirgan
             # bo'lishi mumkin va chekda haqiqiy qoldiq turishi kerak.
-            "balance": get_wallet(user).balance_tiyin,
+            "balance": balance_value(get_wallet(user)),
         },
     }
 
 
-def _repeat_or_conflict(existing: PaynetTransaction, service_id: int, amount: int, user) -> dict:
-    """Takroriy `PerformTransaction`: bir xil bo'lsa — eski javob, aks holda 201.
+def _already_exists(existing: PaynetTransaction):
+    """Takroriy `PerformTransaction` — HAR DOIM **201**.
 
-    Nega shunday: Paynet timeout'dan keyin AYNAN o'sha so'rovni qaytaradi va
-    o'sha `providerTrnId` ni kutadi. Agar biz 201 qaytarsak, u to'lovni
-    "o'tmadi" deb hisoblab bekor qiladi — pul esa bizda yozilgan bo'lardi.
-    Boshqa parametrlar bilan kelgan bir xil ID esa CHINDAN xato — 201.
+    Ilgari bu yerda "parametrlar bir xil bo'lsa eski javobni qaytaramiz"
+    degan mantiq bor edi: Paynet javobni olmay qolsa so'rovni qaytaradi va
+    o'sha `providerTrnId` ni kutadi deb TAXMIN qilgandik.
+
+    Paynet integratsiya tekshiruvi (11.09.2026) buni rad etdi: bir xil
+    `transactionId` bilan kelgan takroriy so'rovga **201 — Транзакция уже
+    существует** qaytarilishi shart. Protokol nuqtai nazaridan bu to'g'ri:
+    201 "yozuv bor" degani, ya'ni Paynet uni muvaffaqiyatsizlik emas,
+    "allaqachon bajarilgan" deb o'qiydi.
+
+    Pul baribir ikki marta yozilmaydi — buni javob kodi emas,
+    `transaction_id` ustidagi UNIQUE indeks kafolatlaydi.
     """
-    same = (
-        existing.service_id == service_id
-        and existing.amount_tiyin == amount
-        and existing.user_id == user.pk
-    )
-    if not same:
-        raise errors.PaynetError(errors.TRN_EXISTS)
-    if existing.state == PaynetTransaction.State.CANCELLED:
-        raise errors.PaynetError(errors.TRN_CANCELLED)
-    return {
-        "providerTrnId": existing.provider_trn_id,
-        "timestamp": fmt(existing.performed_at),
-        "fields": {
-            settings.PAYNET_CLIENT_FIELD: str(existing.user.telegram_id),
-            "balance": get_wallet(existing.user).balance_tiyin,
-        },
-    }
+    raise errors.PaynetError(errors.TRN_EXISTS)
 
 
 def check_transaction(params: dict) -> dict:
@@ -298,9 +308,12 @@ def get_statement(params: dict) -> dict:
     return {
         "statements": [
             {
-                "amount": r["amount_tiyin"],
-                "providerTrnId": r["id"],
-                "transactionId": r["transaction_id"],
+                # Uchalasi ham ATAYLAB `int()` — Paynet `transactionId`
+                # son ekanini talab qiladi, biz uni baza drayveriga
+                # tashlab qo'ymaymiz.
+                "amount": int(r["amount_tiyin"]),
+                "providerTrnId": int(r["id"]),
+                "transactionId": int(r["transaction_id"]),
                 "timestamp": fmt(r["performed_at"]),
             }
             for r in rows

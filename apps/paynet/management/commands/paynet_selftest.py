@@ -151,8 +151,11 @@ class Command(BaseCommand):
 
         result = payload["result"]
         self._ok(f"mijoz topildi: {result['fields'].get('name')}")
-        self._info(f"balans: {result['fields'].get('balance')} tiyin "
-                   f"({result['fields'].get('balance', 0) // 100} so'm)")
+        self._info(f"balans: {result['fields'].get('balance')} so'm")
+        if isinstance(result.get("status"), str):
+            self._ok("status SATR tipida (Paynet talabi)")
+        else:
+            self._fail(f"status {type(result.get('status')).__name__} — SATR bo'lishi kerak")
         self._info(f"vaqt: {result.get('timestamp')}  (GMT+5 bo'lishi kerak)")
 
         # ── 2. Himoya ishlayaptimi ───────────────────────────────────────
@@ -206,17 +209,18 @@ class Command(BaseCommand):
             return self._finish()
         provider_trn_id = payload["result"]["providerTrnId"]
         self._ok(f"to'lov qabul qilindi, providerTrnId = {provider_trn_id}")
-        self._info(f"javobdagi balans: {payload['result']['fields'].get('balance')} tiyin")
+        self._info(f"javobdagi balans: {payload['result']['fields'].get('balance')} so'm")
 
         # Takroriy so'rov — Paynet javobni olmay qolsa aynan shunday qiladi.
+        # Talab (11.09.2026): 201 "Транзакция уже существует".
         status, repeat = self._call("PerformTransaction", {
             "amount": amount, "serviceId": service_id,
             "transactionId": trn_id, "fields": fields,
         })
-        if repeat.get("result", {}).get("providerTrnId") == provider_trn_id:
-            self._ok("takroriy so'rov -> O'SHA providerTrnId (pul ikki marta yozilmadi)")
+        if repeat.get("error", {}).get("code") == 201:
+            self._ok("takroriy so'rov -> 201 (Paynet talabi)")
         else:
-            self._fail(f"takroriy so'rov boshqacha javob berdi: {repeat}")
+            self._fail(f"takroriy so'rovga 201 kutilgandi: {repeat}")
 
         status, payload = self._call("CheckTransaction", {
             "serviceId": service_id, "transactionId": trn_id,
