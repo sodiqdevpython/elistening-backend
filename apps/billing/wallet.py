@@ -12,6 +12,7 @@ from django.db import transaction
 
 from .grants import grant_plan, plan_rank
 from .models import Plan, Reason, Wallet
+from .pricing import price_for
 
 
 def get_wallet(user) -> Wallet:
@@ -35,7 +36,10 @@ def buy_plan(user, plan: Plan, months: int = 1):
     tushirishni rad etsa (`None` qaytarsa) balans tegilmay qoladi.
     """
     months = max(1, int(months or 1))
-    price = int(plan.price_uzs) * 100 * months
+    # To'liq narx EMAS: ko'tarilishda joriy tarif narxi chegirma bo'lib
+    # ketadi (`pricing.price_for`). Narx bitta joyda hisoblanadi, aks holda
+    # tugmadagi raqam bilan yechilgan summa farq qilardi.
+    price = price_for(user, plan, months) * 100
 
     with transaction.atomic():
         wallet = Wallet.objects.select_for_update().get_or_create(user=user)[0]

@@ -24,20 +24,28 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Plan, Wallet
+from .pricing import blocking_plan, price_for
 from .wallet import buy_plan
 
 #: Bitta so'rovda 12 oydan ortiq obuna sotib olinmaydi (xato kiritishdan himoya).
 MAX_MONTHS = 12
 
 
-def plan_payload(plan: Plan, months: int, balance_tiyin: int) -> dict:
-    price_tiyin = int(plan.price_uzs) * 100 * months
+def plan_payload(user, plan: Plan, months: int, balance_tiyin: int) -> dict:
+    """Mijozga ko'rsatiladigan narx — KO'TARILISH chegirmasi hisobga olingan."""
+    full_uzs = int(plan.price_uzs) * months
+    price_uzs = price_for(user, plan, months)
+    price_tiyin = price_uzs * 100
     missing = max(0, price_tiyin - balance_tiyin)
     return {
         "plan": plan.code,
         "plan_name": plan.status_name,
         "months": months,
-        "price_uzs": price_tiyin // 100,
+        # HAQIQATDA to'lanadigan summa (ko'tarilishda farq).
+        "price_uzs": price_uzs,
+        # Tarifning e'lon qilingan narxi — mijoz ikkalasini ko'rsata oladi.
+        "full_price_uzs": full_uzs,
+        "upgrade_credit_uzs": full_uzs - price_uzs,
         "missing_uzs": missing // 100,
         "enough": missing == 0,
     }
@@ -49,7 +57,7 @@ def wallet_payload(user, wallet: Wallet) -> dict:
         "balance_uzs": wallet.balance_uzs,
         "balance_label": wallet.balance_label,
         "pending": (
-            plan_payload(wallet.pending_plan, wallet.pending_months, wallet.balance_tiyin)
+            plan_payload(user, wallet.pending_plan, wallet.pending_months, wallet.balance_tiyin)
             if wallet.pending_plan else None
         ),
         # ── Provayderlar ────────────────────────────────────────────────
@@ -73,11 +81,15 @@ def wallet_payload(user, wallet: Wallet) -> dict:
     }
 
 
-def read_plan(data):
+def read_plan(data, user=None):
     """So'rovdagi `plan` + `months` ni tekshiradi → `(plan, months, error)`.
 
     `apps/click/api.py` ham shuni ishlatadi — tekshiruv ikki joyda
     ajralib ketmasin.
+
+    `user` berilsa PASTGA TUSHIRISH ham to'xtatiladi: `grant_plan` baribir
+    rad etadi, lekin uni faqat o'sha yerda ushlasak foydalanuvchi past
+    tarifni tanlab, pul to'lab, keyin "nega yoqilmadi?" deb qolardi.
     """
     plan = Plan.objects.filter(code=data.get("plan"), is_active=True).first()
     if plan is None:
@@ -94,6 +106,16 @@ def read_plan(data):
     if not 1 <= months <= MAX_MONTHS:
         return None, 1, Response({"detail": f"Oy 1 dan {MAX_MONTHS} gacha bo'lishi kerak"},
                                  status=status.HTTP_400_BAD_REQUEST)
+
+    if user is not None:
+        blocker = blocking_plan(user, plan)
+        if blocker is not None:
+            return None, 1, Response(
+                {"detail": f"Sizda «{blocker.status_name}» tarifi faol — "
+                           "pastroq tarifga o'tib bo'lmaydi.",
+                 "blocked_by": blocker.code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
     return plan, months, None
 
 
@@ -111,7 +133,7 @@ def start_purchase(user, data) -> Response:
     chaqira olishi kerak. Bir view'ni boshqasidan chaqirsak DRF so'rov
     tanasini ikkinchi marta o'qishga urinardi.
     """
-    plan, months, error = read_plan(data)
+    plan, months, error = read_plan(data, user)
     if error is not None:
         return error
 
@@ -126,7 +148,7 @@ def start_purchase(user, data) -> Response:
 
     payload = wallet_payload(user, obj)
     payload["activated"] = event is not None
-    payload["selected"] = plan_payload(plan, months, obj.balance_tiyin)
+    payload["selected"] = plan_payload(user, plan, months, obj.balance_tiyin)
     return Response(payload)
 
 
@@ -141,7 +163,7 @@ def intent(request):
 @permission_classes([IsAuthenticated])
 def buy(request):
     """Balansdagi puldan tarifni yoqadi (pul yetmasa — 402)."""
-    plan, months, error = read_plan(request.data)
+    plan, months, error = read_plan(request.data, request.user)
     if error is not None:
         return error
 

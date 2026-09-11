@@ -15,6 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.billing.models import Wallet
+from apps.billing.pricing import price_for
 from apps.billing.wallet_views import read_plan
 
 from .links import payment_url
@@ -31,7 +32,7 @@ def checkout(request):
         return Response({"detail": "Click hali sozlanmagan"},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-    plan, months, error = read_plan(request.data)
+    plan, months, error = read_plan(request.data, request.user)
     if error is not None:
         return error
 
@@ -41,7 +42,7 @@ def checkout(request):
     # pul yo'qolmaydi (hamyonda qoladi), lekin bu kutilmagan xarajat va
     # "nega 23 000 so'rayapti, menda 10 000 bor-ku?" degan savol tug'iladi.
     wallet, _ = Wallet.objects.get_or_create(user=request.user)
-    price_uzs = int(plan.price_uzs) * months
+    price_uzs = price_for(request.user, plan, months)
     missing_uzs = max(0, price_uzs - wallet.balance_uzs)
 
     if missing_uzs == 0:
