@@ -301,8 +301,22 @@ PAYNET_SERVICE_NAME = env("PAYNET_SERVICE_NAME", default="listening.uz")
 # Приложение №2, 4.2-band — Paynet FAQAT shu tarmoqlardan keladi.
 # Bo'sh ro'yxat prod'da "hech kim kira olmaydi" degani (`security.ip_allowed`):
 # xavfsizlik sozlamasini unutish "hammaga ochiq" ga aylanmasligi kerak.
+#
+# Ro'yxat: shartnomadagi 2 diapazon + test manzili (11.09) + Paynet so'ragan
+# 6 ta prod manzil (14.09). `nginx/default.conf` dagi `allow` bilan BIR XIL.
 PAYNET_ALLOWED_NETS = env.list(
-    "PAYNET_ALLOWED_NETS", default=["213.230.106.112/28", "213.230.65.80/28"],
+    "PAYNET_ALLOWED_NETS",
+    default=[
+        "213.230.106.112/28",
+        "213.230.65.80/28",
+        "195.158.21.42",
+        "109.207.244.62",
+        "62.209.139.94",
+        "109.207.244.94",
+        "89.236.220.222",
+        "91.196.76.52",
+        "94.158.63.240",
+    ],
 )
 
 # To'lovda `fields` ichidagi identifikator maydonining nomi. Bizda bu
