@@ -7,8 +7,8 @@ funksiyalarni chaqira oladi.
 ## Uch qat'iy qoida
 
 1. **Idempotentlik.** `transaction_id` UNIQUE. Paynet javobni olmay qolsa
-   so'rovni qaytaradi — biz pulni ikki marta yozmaymiz, eski javobni AYNAN
-   qaytaramiz.
+   so'rovni qaytaradi — pul ikki marta yozilmaydi, takroriy so'rovga
+   201 ("Транзакция уже существует") qaytadi (Paynet talabi, 11.09.2026).
 2. **Balans faqat qulf ostida.** Har o'zgarish `select_for_update` ichida.
    `PerformTransaction` va `CancelTransaction` bir vaqtda kelsa ham balans
    buzilmaydi.
@@ -107,6 +107,24 @@ def balance_value(wallet) -> int:
     return wallet.balance_tiyin // 100
 
 
+def payer_name(user) -> str:
+    """Kassa ekrani va chekda chiqadigan ism.
+
+    Avtomatik `tg<chat_id>` username KO'RSATILMAYDI — u foydalanuvchi
+    tanlagan nom emas (`frontend/src/utils/username.ts` bilan bir xil qoida).
+    Ism ham, haqiqiy username ham bo'lmasa — Telegram ID, chunki kassir
+    aynan shu raqamni kiritgan va uni tanib oladi.
+    """
+    import re
+
+    if (user.display_name or "").strip():
+        return user.display_name.strip()
+    username = (user.username or "").strip()
+    if username and not re.fullmatch(r"tg\d+", username):
+        return username
+    return f"ID {user.telegram_id}"
+
+
 def check_amount(raw) -> int:
     """Summani tekshiradi (tiyinda) — chegaralar `settings` dan."""
     # `bool` — `int` ning avlodi: `True` 1 tiyinga aylanib ketmasin.
@@ -151,7 +169,7 @@ def get_information(params: dict) -> dict:
         "fields": {
             # Kassir chekdan oldin ismni ko'rib, to'g'ri odamga to'layotganini
             # tasdiqlaydi — noto'g'ri ID bilan to'lovlarning asosiy oldini olish.
-            "name": user.display_name or user.username or f"#{user.pk}",
+            "name": payer_name(user),
             "balance": balance_value(wallet),
         },
     }
@@ -187,7 +205,7 @@ def perform_transaction(params: dict) -> dict:
     except IntegrityError:
         # Ayni damda AYNAN shu `transactionId` bilan ikkinchi so'rov o'tib
         # ketdi (Paynet retry'i). UNIQUE indeks bizni ikki marta yozishdan
-        # saqladi — endi o'sha yozuvni o'qib, bir xil javob qaytaramiz.
+        # saqladi — oddiy takroriy so'rov kabi 201 qaytaramiz.
         existing = PaynetTransaction.objects.filter(transaction_id=trn_id).first()
         if existing is None:
             raise
@@ -198,8 +216,13 @@ def perform_transaction(params: dict) -> dict:
     return {
         "providerTrnId": txn.provider_trn_id,
         "timestamp": fmt(txn.performed_at),
+        # Maydonlar Приложение №2 Таблица 4 da AYNAN shu tarkibda e'lon
+        # qilingan (`paynet_docs/universal_tech_doc_v_1_5_eListening.docx`).
+        # Bu yerga maydon qo'shsangiz yoki olib tashlasangiz — hujjatni ham
+        # yangilang, aks holda Paynet chekda boshqacha narsa kutadi.
         "fields": {
             settings.PAYNET_CLIENT_FIELD: str(user.telegram_id),
+            "name": payer_name(user),
             # Таблица 4 — to'lovdan keyingi balans MAJBURIY. Yangi qiymatni
             # bazadan qayta o'qiymiz: `try_pending_plan` uni kamaytirgan
             # bo'lishi mumkin va chekda haqiqiy qoldiq turishi kerak.

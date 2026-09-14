@@ -146,6 +146,14 @@ class GetInformationTests(PaynetBase):
         code = self.error_code("GetInformation", {"serviceId": 1, "fields": {}})
         self.assertEqual(code, errors.MISSING_PARAMS)
 
+    def test_auto_username_is_not_shown_as_name(self):
+        """Ism yo'q, username avtomatik `tg...` — kassada ID chiqadi."""
+        bare = User.objects.create(username="tg888", telegram_id=888, display_name="")
+        result = self.result("GetInformation", {"serviceId": 1, "fields": {"client_id": "888"}})
+        self.assertEqual(result["fields"]["name"], "ID 888")
+        self.assertEqual(set(result["fields"]), {"name", "balance"})   # Таблица 5
+        bare.delete()
+
     def test_inactive_user_is_forbidden(self):
         self.user.is_active = False
         self.user.save(update_fields=["is_active"])
@@ -159,6 +167,9 @@ class PerformTransactionTests(PaynetBase):
         self.assertEqual(Wallet.objects.get(user=self.user).balance_tiyin, 2_300_000)
         # Javobdagi balans SO'MDA (Paynet talabi), bazada esa tiyinda.
         self.assertEqual(result["fields"]["balance"], 23000)
+        # Таблица 4 da e'lon qilingan tarkib — hujjat bilan AYNAN mos.
+        self.assertEqual(set(result["fields"]), {"client_id", "name", "balance"})
+        self.assertEqual(result["fields"]["name"], "Ali")
         self.assertEqual(result["providerTrnId"], PaynetTransaction.objects.get().pk)
 
     def test_repeat_returns_201(self):
