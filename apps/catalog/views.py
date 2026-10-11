@@ -67,12 +67,12 @@ class DictationViewSet(viewsets.ReadOnlyModelViewSet):
             # `?type=` ikkala formatni qabul qiladi:
             #   `short_story` (Dictation.Type.value) yoki
             #   `short-stories` (URL slug — CATEGORY_META).
-            # Frontend URL doim slug bilan yuboradi, `-` bo'lsa slug deb hisoblaymiz.
-            if "-" in type_filter:
-                from . import mock_data
-                mapped = mock_data.dictation_type_for_slug(type_filter)
-                if mapped:
-                    type_filter = mapped
+            # Slug HAR DOIM tekshiriladi. Ilgari faqat `-` bo'lsa slug deb
+            # olinardi va `numbers` (→ number), `conversations` (→ conversation)
+            # turga aylanmay "No results found" chiqardi; `news`/`ted` ishlagani
+            # faqat slug bilan tur tasodifan bir xil bo'lgani uchun edi.
+            from . import mock_data
+            type_filter = mock_data.dictation_type_for_slug(type_filter) or type_filter
             qs = qs.filter(type=type_filter)
         level_filter = self.request.query_params.get("level")
         if level_filter and level_filter != "all":

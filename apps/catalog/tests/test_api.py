@@ -44,6 +44,21 @@ class ListingTests(ApiTestCase):
         response = self.client.get("/api/dictations/?level=A2")
         self.assertEqual(response.json()["count"], 1)
 
+    def test_every_topic_slug_finds_its_lessons(self):
+        """Saytdagi mavzu sahifasi SLUG yuboradi. `numbers`/`conversations` da
+        `-` yo'q — ilgari turga aylanmay "No results found" chiqardi."""
+        from apps.catalog.mock_data import CATEGORY_META
+
+        for slug, *_, dict_type in CATEGORY_META:
+            Dictation.objects.create(title=f"T {slug}", type=dict_type, is_published=True,
+                                     body=[{"start_ms": 0, "end_ms": 1000, "text": "Hi."}])
+        for slug, *_, dict_type in CATEGORY_META:
+            with self.subTest(slug=slug):
+                titles = [r["title"] for r in self.client.get(f"/api/dictations/?type={slug}").json()["results"]]
+                self.assertIn(f"T {slug}", titles)
+                by_type = self.client.get(f"/api/dictations/?type={dict_type}").json()["results"]
+                self.assertIn(f"T {slug}", [r["title"] for r in by_type])
+
     def test_list_does_not_include_body(self):
         """Ro'yxatda body yo'q — kichikroq javob."""
         response = self.client.get("/api/dictations/")
