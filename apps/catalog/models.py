@@ -125,6 +125,14 @@ class Dictation(TimeStampedModel):
         "YouTube havolasi", blank=True,
         help_text="Faqat 'Video ham bor?' belgilangan diktantlar uchun.",
     )
+    # Tashqi manbadan import qilingan dars (`manage.py scrape_dailydictation`).
+    # Bo'sh emas = import qilingan: qayta olinmaydi (takror tekshiruvi shu
+    # maydon bo'yicha) va "Sayt sozlamalari"dagi bitta belgi bilan hammasi
+    # birga yashiriladi (`catalog/imported.py`).
+    source_url = models.URLField(
+        "Manba havolasi", max_length=300, blank=True, default="", db_index=True,
+        help_text="Tashqi saytdan import qilingan bo'lsa — asl dars sahifasi.",
+    )
 
     # Transkript (timestamp bilan) — frontendga to'liq yuboriladi.
     # `body` = "chunk" darajasidagi segmentlar (odam qulog'iga qulay).

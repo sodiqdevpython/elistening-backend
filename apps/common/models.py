@@ -55,6 +55,12 @@ class SiteConfig(TimeStampedModel):
         help_text="@ SIZ ye — faqat username. Masalan: sodiq2005 → t.me/sodiq2005. "
                   "Bo'sh qoldirilsa 'Bog'lanish' menyusi ko'rinmaydi.",
     )
+    show_imported = models.BooleanField(
+        "Tashqi manbadan olingan darslar ko'rinsin", default=True,
+        help_text="Belgini olib saqlasangiz import qilingan (dailydictation) "
+                  "HAMMA darslar saytda darrov yashiriladi; qayta belgilasangiz — "
+                  "yana ko'rinadi. Yangi import ham shu holatda keladi.",
+    )
 
     class Meta:
         verbose_name = "Sayt sozlamasi"
@@ -71,7 +77,15 @@ class SiteConfig(TimeStampedModel):
         u = u.replace("https://t.me/", "").replace("http://t.me/", "")
         u = u.replace("t.me/", "").lstrip("@").strip().strip("/")
         self.contact_telegram = u
+        previous = SiteConfig.objects.filter(pk=1).values_list("show_imported", flat=True).first()
         super().save(*args, **kwargs)
+        # Tashqi darslar belgisi O'ZGARGANDA — hammasi birga yashiriladi /
+        # ko'rsatiladi. Boshqa maydon (masalan Telegram) saqlansa tegilmaydi,
+        # aks holda qo'lda yashirilgan bitta dars ham qaytib chiqib qolardi.
+        self._imported_changed = None
+        if (True if previous is None else previous) != self.show_imported:
+            from apps.catalog.imported import set_imported_visibility
+            self._imported_changed = set_imported_visibility(self.show_imported)
         # Admin o'zgartirsa — kesh darrov yangilansin (aks holda 5 daqiqa eski
         # qiymat qolardi va "Bog'lanish" kech chiqardi).
         from django.core.cache import cache

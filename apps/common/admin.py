@@ -43,8 +43,29 @@ class BaseModelAdmin(admin.ModelAdmin):
 class SiteConfigAdmin(admin.ModelAdmin):
     """Yagona sozlama — faqat bitta yozuv. Qo'shish/o'chirish o'chirilgan."""
 
-    list_display = ("__str__", "contact_telegram", "updated_at")
-    readonly_fields = ("created_at", "updated_at")
+    list_display = ("__str__", "contact_telegram", "show_imported", "updated_at")
+    readonly_fields = ("imported_info", "created_at", "updated_at")
+    fields = ("contact_telegram", "show_imported", "imported_info", "created_at", "updated_at")
+
+    @admin.display(description="Import qilingan darslar")
+    def imported_info(self, obj):
+        from django.urls import reverse
+        from django.utils.html import format_html
+
+        from apps.catalog.imported import imported
+
+        total = imported().count()
+        shown = imported().filter(is_published=True).count()
+        url = reverse("admin:catalog_dictation_changelist") + "?manba=imported"
+        return format_html('Jami {} ta, saytda ko\'rinadigan: {} ta — <a href="{}">ro\'yxatni ochish</a>',
+                           total, shown, url)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        changed = getattr(obj, "_imported_changed", None)
+        if changed is not None:
+            state = "ko'rsatildi" if obj.show_imported else "yashirildi"
+            self.message_user(request, f"Tashqi manbadan olingan {changed} ta dars {state}.")
 
     def has_add_permission(self, request):
         # Singleton — allaqachon yozuv bo'lsa qo'shishni bloklaymiz.

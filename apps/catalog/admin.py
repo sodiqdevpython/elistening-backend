@@ -30,12 +30,33 @@ from .models import (
 )
 
 
+class SourceFilter(admin.SimpleListFilter):
+    """Tashqi manbadan import qilinganlar (`source_url`) / o'zimiz qo'shganlar.
+
+    Hammasini birga yashirish — "Sayt sozlamalari"dagi belgi
+    (`catalog/imported.py`); bu filtr ularni ko'rish va bittalab boshqarish uchun.
+    """
+
+    title = "Manba"
+    parameter_name = "manba"
+
+    def lookups(self, request, model_admin):
+        return [("imported", "Tashqi (dailydictation)"), ("own", "O'zimizniki")]
+
+    def queryset(self, request, queryset):
+        if self.value() == "imported":
+            return queryset.exclude(source_url="")
+        if self.value() == "own":
+            return queryset.filter(source_url="")
+        return queryset
+
+
 class DictationAdmin(BaseModelAdmin):
     list_display = ("title", "type", "cefr_level", "is_media_badge",
                     "duration_col", "ai_status_badge",
                     "is_published", "segment_editor_link", "created_at")
     list_display_links = ("title",)
-    list_filter = ("type", "cefr_level", "is_published", "is_media",
+    list_filter = ("type", "cefr_level", "is_published", SourceFilter, "is_media",
                    "transcription_status", "created_at")
     search_fields = ("title", "slug")
     date_hierarchy = "created_at"
@@ -45,7 +66,20 @@ class DictationAdmin(BaseModelAdmin):
                        "transcription_status", "transcription_error",
                        "tests_status", "tests_error",
                        "mcq_questions", "tfng_questions", "fill_gap_questions",
-                       "created_at", "updated_at")
+                       "source_url", "created_at", "updated_at")
+
+    def get_fieldsets(self, request, obj=None):
+        # "Manba" bo'limi faqat import qilingan darsda (proxy bo'limlarida ham).
+        fieldsets = list(super().get_fieldsets(request, obj))
+        if obj is not None and obj.source_url:
+            fieldsets.insert(1, ("Manba", {
+                "fields": ("source_url",),
+                "description": "Tashqi saytdan import qilingan. Hammasini birga "
+                               "yashirish: Sayt sozlamalari → \"Tashqi manbadan olingan "
+                               "darslar ko'rinsin\".",
+            }))
+        return fieldsets
+
     actions = (
         "action_publish", "action_unpublish",
         "action_ai_transcribe", "action_generate_tests",

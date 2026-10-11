@@ -3,3 +3,9 @@
 CLAUDE.md
 .mp3
 media/
+# Lokal baza va sirlar — repo OMMAVIY, bular hech qachon push bo'lmasin.
+db.sqlite3
+db.sqlite3-*
+*cookies*.txt
+# scrape_dailydictation chiqishi (LEVELS.md, xom JSON)
+.scrape/
