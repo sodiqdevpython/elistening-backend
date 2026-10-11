@@ -28,9 +28,12 @@ import time
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.test import Client
 
-from apps.billing.models import Plan, Wallet
+from apps.billing.models import Plan, Wallet, WalletTransaction
+from apps.billing.wallet import record
+from apps.telegrambot.models import BotMessage
 from apps.click.links import payment_url
 from apps.click.models import ClickOrder
 
@@ -263,9 +266,24 @@ class Command(BaseCommand):
 
         # ── Qaytarib olish ──
         self._head("4. Tozalash — sinov puli qaytarib olinadi")
-        wallet = Wallet.objects.get(user=user)
-        wallet.balance_tiyin -= order.amount_tiyin
-        wallet.save(update_fields=["balance_tiyin", "updated_at"])
+        with transaction.atomic():
+            wallet = Wallet.objects.select_for_update().get(user=user)
+            wallet.balance_tiyin -= order.amount_tiyin
+            wallet.save(update_fields=["balance_tiyin", "updated_at"])
+            # Hamyon tarixi balans bilan mos qolsin — sinov puli "tuzatish"
+            # bo'lib yoziladi (balansni tarixsiz o'zgartirish taqiqlangan).
+            record(wallet, WalletTransaction.Kind.ADJUST, WalletTransaction.Provider.ADMIN,
+                   -order.amount_tiyin, external_id=str(order.pk),
+                   note="click_selftest: sinov puli qaytarildi")
+        # Sinov to'lovi uchun botdagi "pul tushdi" xabari ketmasin.
+        test_entries = WalletTransaction.objects.filter(
+            user=user, kind=WalletTransaction.Kind.DEPOSIT,
+            provider=WalletTransaction.Provider.CLICK, external_id=str(order.pk),
+        ).values_list("pk", flat=True)
+        BotMessage.objects.filter(
+            user=user, kind=BotMessage.Kind.DEPOSIT, status=BotMessage.Status.PENDING,
+            payload__entry_id__in=list(test_entries),
+        ).update(status=BotMessage.Status.SKIPPED, error="click_selftest")
         if keep:
             # `--keep`: buyurtma qoladi, lekin u allaqachon `confirmed` —
             # Click testeri unga `-4 Already paid` oladi. Shu bois YANGI,

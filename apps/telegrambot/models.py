@@ -18,11 +18,16 @@ class BotMessage(TimeStampedModel):
         STREAK = "streak", "Streak"
         BROADCAST = "broadcast", "Ommaviy xabar"
         SYSTEM = "system", "Tizim"
+        # Pul tushdi: bot uni YUBORISH paytida yig'adi — tariflar rasmi +
+        # tanlash tugmalari (`apps/billing/offer.py`). `text` — zaxira matn.
+        DEPOSIT = "deposit", "Pul tushdi"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Kutilmoqda"
         SENT = "sent", "Yuborilgan"
         FAILED = "failed", "Xatolik"
+        # Yuborish kerak bo'lmay qoldi (masalan to'lov shu orada bekor qilindi).
+        SKIPPED = "skipped", "O'tkazib yuborildi"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="Foydalanuvchi", null=True, blank=True,
@@ -31,6 +36,8 @@ class BotMessage(TimeStampedModel):
     telegram_id = models.BigIntegerField("Telegram chat ID", db_index=True)
     kind = models.CharField("Turi", max_length=12, choices=Kind.choices, default=Kind.SYSTEM)
     text = models.TextField("Matn")
+    payload = models.JSONField("Qo'shimcha ma'lumot", default=dict, blank=True,
+                               help_text="DEPOSIT uchun: {\"entry_id\": <WalletTransaction>}")
     status = models.CharField("Holat", max_length=10, choices=Status.choices,
                               default=Status.PENDING, db_index=True)
     error = models.TextField("Xatolik", blank=True)

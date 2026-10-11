@@ -33,6 +33,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
+from apps.billing.models import WalletTransaction
 from apps.billing.wallet import buy_plan, credit, try_pending_plan
 
 from . import errors, signature
@@ -185,7 +186,9 @@ def _settle(order, data):
         locked.paid_at = timezone.now()
         locked.save(update_fields=["status", "status_note", "click_trans_id",
                                    "click_paydoc_id", "paid_at", "updated_at"])
-        credit(locked.user, locked.amount_tiyin)
+        # Tarix yozuvi + botdagi "pul tushdi" xabari (commit'dan keyin navbatga).
+        credit(locked.user, locked.amount_tiyin, WalletTransaction.Provider.CLICK,
+               external_id=str(locked.pk))
 
     # Tarif yoqish tranzaksiyadan TASHQARIDA: u o'z atomic blokini ochadi va
     # ichida signal (tarix + Telegram xabari navbati) ishlaydi.

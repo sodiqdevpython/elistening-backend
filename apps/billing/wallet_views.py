@@ -23,9 +23,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Plan, Wallet
+from .models import Plan, Wallet, WalletTransaction
 from .pricing import blocking_plan, price_for
-from .wallet import buy_plan
+from .wallet import buy_plan, choose_plan
 
 #: Bitta so'rovda 12 oydan ortiq obuna sotib olinmaydi (xato kiritishdan himoya).
 MAX_MONTHS = 12
@@ -137,17 +137,12 @@ def start_purchase(user, data) -> Response:
     if error is not None:
         return error
 
-    obj, _ = Wallet.objects.get_or_create(user=user)
-    # Balans allaqachon yetarli bo'lsa DARROV yoqamiz — foydalanuvchini
-    # keraksiz to'lovga yubormaymiz.
-    event, obj = buy_plan(user, plan, months)
-    if event is None:
-        obj.pending_plan = plan
-        obj.pending_months = months
-        obj.save(update_fields=["pending_plan", "pending_months", "updated_at"])
+    # Balans allaqachon yetarli bo'lsa DARROV yoqiladi, aks holda niyat bo'lib
+    # qoladi. Botdagi tarif tugmalari ham AYNAN shu funksiyadan o'tadi.
+    status_, event, obj = choose_plan(user, plan, months)
 
     payload = wallet_payload(user, obj)
-    payload["activated"] = event is not None
+    payload["activated"] = status_ == "activated"
     payload["selected"] = plan_payload(user, plan, months, obj.balance_tiyin)
     return Response(payload)
 
@@ -177,6 +172,51 @@ def buy(request):
     payload["activated"] = True
     payload["expires_at"] = event.expires_at
     return Response(payload)
+
+
+#: Profilda ko'rsatiladigan eng ko'p qator — odatda oyiga 1-2 to'lov bo'ladi.
+HISTORY_LIMIT = 100
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def wallet_history(request):
+    """To'lovlar tarixi — qaysi kuni qancha tushgan va nimaga sarflangan.
+
+    Manba: `WalletTransaction` (append-only). Profil sahifasida ko'rinadi.
+    """
+    from django.db.models import Sum
+
+    wallet_obj, _ = Wallet.objects.get_or_create(user=request.user)
+    qs = WalletTransaction.objects.filter(user=request.user)
+    kinds = WalletTransaction.Kind
+    total_in = qs.filter(kind__in=[kinds.DEPOSIT, kinds.REFUND]).aggregate(s=Sum("amount_tiyin"))["s"] or 0
+    spent = qs.filter(kind=kinds.PURCHASE).aggregate(s=Sum("amount_tiyin"))["s"] or 0
+
+    rows = qs.select_related("plan")[:HISTORY_LIMIT]
+    return Response({
+        "balance_uzs": wallet_obj.balance_uzs,
+        # Bekor qilingan to'lovlar ayirib tashlangan — haqiqatda tushgan pul.
+        "total_in_uzs": total_in // 100,
+        "total_spent_uzs": -spent // 100,
+        "results": [
+            {
+                "id": row.pk,
+                "kind": row.kind,
+                "kind_label": row.get_kind_display(),
+                "provider": row.provider,
+                "provider_label": row.get_provider_display(),
+                "amount_uzs": row.amount_uzs,
+                "balance_after_uzs": row.balance_after_uzs,
+                "plan": row.plan.code if row.plan else None,
+                "plan_name": row.plan.status_name if row.plan else None,
+                "months": row.months,
+                "note": row.note,
+                "occurred_at": row.occurred_at,
+            }
+            for row in rows
+        ],
+    })
 
 
 @api_view(["POST"])

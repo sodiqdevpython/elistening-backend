@@ -277,6 +277,72 @@ class Wallet(TimeStampedModel):
         return f"{self.balance_uzs:,}".replace(",", " ") + " so'm"
 
 
+class WalletTransaction(TimeStampedModel):
+    """Hamyon TARIXI — har pul harakati bitta qator (append-only).
+
+    Profildagi "To'lovlar tarixi" (qaysi kuni qancha tushgan, nimaga
+    sarflangan) shu jadvaldan chiqadi. Balans o'zgaradigan HAR joy
+    (`billing/wallet.py`, `paynet/service.py`) shu yozuvni AYNI tranzaksiya
+    va AYNI qulf ostida qo'shadi — shu bois tarix bilan balans hech qachon
+    ajralib ketmaydi. Balansni boshqa yo'l bilan o'zgartirmang.
+
+    `amount_tiyin` ishorali: kirim musbat, chiqim (tarif, bekor qilish) manfiy.
+    """
+
+    class Kind(models.TextChoices):
+        DEPOSIT = "deposit", "Pul tushdi"
+        PURCHASE = "purchase", "Tarif sotib olindi"
+        REFUND = "refund", "To'lov bekor qilindi"
+        ADJUST = "adjust", "Tuzatish"
+
+    class Provider(models.TextChoices):
+        PAYNET = "paynet", "Paynet"
+        CLICK = "click", "Click"
+        WALLET = "wallet", "Hamyon"
+        ADMIN = "admin", "Admin"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Foydalanuvchi",
+        # PROTECT — moliyaviy yozuv (Paynet/Click tranzaksiyalari kabi).
+        on_delete=models.PROTECT, related_name="wallet_transactions",
+    )
+    kind = models.CharField("Turi", max_length=12, choices=Kind.choices, db_index=True)
+    provider = models.CharField("Manba", max_length=12, choices=Provider.choices)
+    amount_tiyin = models.BigIntegerField("Summa (tiyin)", help_text="Kirim +, chiqim −")
+    balance_after_tiyin = models.BigIntegerField(
+        "Keyingi balans (tiyin)", null=True, blank=True,
+        help_text="Bo'sh — bu jadvaldan oldingi to'lov (migratsiyada tiklangan).",
+    )
+    plan = models.ForeignKey(Plan, verbose_name="Tarif", null=True, blank=True,
+                             on_delete=models.PROTECT, related_name="wallet_transactions")
+    months = models.PositiveSmallIntegerField("Necha oy", default=0)
+    external_id = models.CharField(
+        "Tashqi ID", max_length=64, blank=True, db_index=True,
+        help_text="Paynet `transactionId` yoki Click buyurtma raqami.",
+    )
+    note = models.CharField("Izoh", max_length=200, blank=True)
+    # `created_at` emas: eski to'lovlar migratsiyada haqiqiy vaqti bilan tiklanadi.
+    occurred_at = models.DateTimeField("Vaqti", default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Hamyon tarixi"
+        verbose_name_plural = "Hamyon tarixi"
+        ordering = ["-occurred_at", "-id"]
+        indexes = [models.Index(fields=["user", "-occurred_at"])]
+
+    def __str__(self):
+        return f"{self.user} — {self.get_kind_display()} {self.amount_uzs:+,} so'm"
+
+    @property
+    def amount_uzs(self) -> int:
+        # `//` manfiyda pastga yaxlitlaydi (-1.5 → -2) — nolga qarab kesamiz.
+        return int(self.amount_tiyin / 100)
+
+    @property
+    def balance_after_uzs(self) -> int | None:
+        return None if self.balance_after_tiyin is None else self.balance_after_tiyin // 100
+
+
 class DailyUsage(TimeStampedModel):
     """Kunlik limit hisobi — har (foydalanuvchi, sana, tur, kontent) NOYOB.
 

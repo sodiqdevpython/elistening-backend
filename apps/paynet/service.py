@@ -22,8 +22,8 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.billing.models import Wallet
-from apps.billing.wallet import get_wallet, try_pending_plan
+from apps.billing.models import Wallet, WalletTransaction
+from apps.billing.wallet import get_wallet, notify_deposit, record, try_pending_plan
 
 from . import errors, security
 from .models import PaynetTransaction
@@ -202,6 +202,12 @@ def perform_transaction(params: dict) -> dict:
             )
             wallet.balance_tiyin += amount
             wallet.save(update_fields=["balance_tiyin", "updated_at"])
+            # Profildagi to'lovlar tarixi + botdagi "pul tushdi" xabari
+            # (rasm va tarif tugmalari). Ikkalasi ham bazaga yozuv — tarmoq
+            # yo'q, 500 ms byudjetiga ta'sir qilmaydi.
+            entry = record(wallet, WalletTransaction.Kind.DEPOSIT, WalletTransaction.Provider.PAYNET,
+                           amount, external_id=str(trn_id), occurred_at=txn.performed_at)
+            notify_deposit(entry)
     except IntegrityError:
         # Ayni damda AYNAN shu `transactionId` bilan ikkinchi so'rov o'tib
         # ketdi (Paynet retry'i). UNIQUE indeks bizni ikki marta yozishdan
@@ -304,6 +310,11 @@ def cancel_transaction(params: dict) -> dict:
         locked.state = PaynetTransaction.State.CANCELLED
         locked.cancelled_at = timezone.now()
         locked.save(update_fields=["state", "cancelled_at", "updated_at"])
+        # Hali yuborilmagan "pul tushdi" xabari shu yozuvni ko'rib o'tkazib
+        # yuboriladi (`billing/offer.py::deposit_message`).
+        record(wallet, WalletTransaction.Kind.REFUND, WalletTransaction.Provider.PAYNET,
+               -locked.amount_tiyin, external_id=str(locked.transaction_id),
+               occurred_at=locked.cancelled_at)
 
     return {"providerTrnId": locked.provider_trn_id, "timestamp": fmt(locked.cancelled_at),
             "transactionState": PaynetTransaction.State.CANCELLED}

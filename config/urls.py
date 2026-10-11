@@ -74,6 +74,7 @@ api_patterns = [
     path("billing/wallet/intent/", wallet_views.intent, name="wallet-intent"),
     path("billing/wallet/intent/cancel/", wallet_views.cancel_intent, name="wallet-intent-cancel"),
     path("billing/wallet/buy/", wallet_views.buy, name="wallet-buy"),
+    path("billing/wallet/history/", wallet_views.wallet_history, name="wallet-history"),
 
     # Click checkout — buyurtma yaratib my.click.uz havolasini beradi
     path("billing/click/checkout/", click_api.checkout, name="click-checkout"),

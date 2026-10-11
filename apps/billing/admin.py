@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from apps.common.admin import BaseModelAdmin
 
-from .models import InviteReward, Payment, Plan, Subscription, SubscriptionEvent
+from .models import InviteReward, Payment, Plan, Subscription, SubscriptionEvent, WalletTransaction
 
 
 @admin.register(Plan)
@@ -104,4 +104,28 @@ class InviteRewardAdmin(BaseModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WalletTransaction)
+class WalletTransactionAdmin(BaseModelAdmin):
+    """Hamyon tarixi — faqat o'qish. Har qator balans o'zgargan paytda AYNI
+    qulf ostida yozilgan; qo'lda o'zgartirish tarixni balansdan ajratardi."""
+
+    list_display = ("user", "kind", "provider", "amount_uzs", "balance_after_uzs",
+                    "plan", "external_id", "occurred_at")
+    list_filter = ("kind", "provider", "occurred_at")
+    search_fields = ("user__username", "user__display_name", "user__telegram_id", "external_id", "note")
+    list_select_related = ("user", "plan")
+    date_hierarchy = "occurred_at"
+    readonly_fields = ("user", "kind", "provider", "amount_tiyin", "balance_after_tiyin", "plan",
+                       "months", "external_id", "note", "occurred_at", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
