@@ -36,16 +36,19 @@ def _paginated(results: list) -> dict:
 def site_config(request):
     """Global sayt sozlamalari — navbar har sahifada o'qiydi (yengil).
 
-    Hozircha faqat "Bog'lanish" Telegram username. Bo'sh bo'lsa frontend
-    "Bog'lanish" menyusini ko'rsatmaydi.
+    "Bog'lanish" Telegram username (bo'sh bo'lsa frontend menyuni
+    ko'rsatmaydi) va login captcha'sining sitekey'i (bo'sh = captcha o'chiq).
     """
+    from apps.accounts.captcha import public_sitekey
     from apps.common.models import SiteConfig, cls_cache_key
     payload = cache.get(cls_cache_key())
     if payload is None:
         cfg = SiteConfig.get_solo()
         payload = {"contact_telegram": cfg.contact_telegram or ""}
         cache.set(cls_cache_key(), payload, CACHE_TTL_CONFIG)
-    return Response(payload)
+    # Sitekey keshga kirmaydi: deploy'dan keyin eski kesh (kalitsiz) qolib,
+    # sayt widget'ni ko'rsatmay server esa captcha talab qilib turmasin.
+    return Response({**payload, "captcha_sitekey": public_sitekey()})
 
 
 @api_view(["GET"])

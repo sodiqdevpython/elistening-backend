@@ -87,10 +87,10 @@ class TelegramVerifyView(APIView):
                 "user": MeSerializer(user, context={"request": request}).data,
             })
 
-        # ── Captcha (hCaptcha) — FAQAT WEB uchun ──
+        # ── Captcha (Cloudflare Turnstile) — FAQAT WEB uchun ──
         #    Mobil ilova captcha ko'rsatmaydi (u yerda kerak emas), shu bois
         #    `X-Platform: mobile` bo'lsa captcha O'TKAZIB YUBORILADI. Test
-        #    kodlari ham yuqorida captchasiz qaytdi. Secret bo'sh bo'lsa
+        #    kodlari ham yuqorida captchasiz qaytdi. Kalitlar bo'sh bo'lsa
         #    (lokal) captcha umuman o'chiq.
         platform = (request.headers.get("X-Platform") or "").lower()
         if platform != "mobile":

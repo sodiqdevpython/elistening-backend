@@ -18,8 +18,8 @@ env = environ.Env(
     SITE_URL=(str, "http://192.168.1.178:5173"),
     GPT_API_KEY=(str, ""),
     CLAUDE_API_KEY=(str, ""),
-    HCAPTCHA_SECRET=(str, ""),
-    HCAPTCHA_SITEKEY=(str, ""),
+    TURNSTILE_SECRET=(str, ""),
+    TURNSTILE_SITEKEY=(str, ""),
     # Prod domen(lar)i — CSRF/CORS ro'yxatiga qo'shiladi. Masalan:
     # EXTRA_ORIGINS=https://listening.uz,https://www.listening.uz
     EXTRA_ORIGINS=(list, []),
@@ -30,14 +30,15 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
-# hCaptcha — login (OTP verify) uchun. Secret bo'sh bo'lsa captcha O'CHIQ.
-HCAPTCHA_SECRET = env("HCAPTCHA_SECRET")
-HCAPTCHA_SITEKEY = env("HCAPTCHA_SITEKEY")
-# Testlarda captcha O'CHIQ — verify endpoint tashqi hCaptcha API'ni chaqirmasin
-# (aks holda `.env` da secret bo'lsa OTP testlari 400 "captcha_failed" oladi).
+# Cloudflare Turnstile — sayt login'i (OTP verify) uchun. Ikkala kalit ham
+# berilsagina yoqiladi (`apps/accounts/captcha.py`).
+TURNSTILE_SECRET = env("TURNSTILE_SECRET")
+TURNSTILE_SITEKEY = env("TURNSTILE_SITEKEY")
+# Testlarda captcha O'CHIQ — verify endpoint tashqi Cloudflare API'ni chaqirmasin
+# (aks holda `.env` da kalit bo'lsa OTP testlari 400 "captcha_failed" oladi).
 import sys as _sys  # noqa: E402
 if len(_sys.argv) > 1 and _sys.argv[1] == "test":
-    HCAPTCHA_SECRET = ""
+    TURNSTILE_SECRET = ""
 
 # Doimiy TEST akkauntlar — bu kodlar kiritilsa har doim mos akkauntga kiradi
 # (bot kodisiz). Har biri o'z tarifida. Bot generatori bu kodlarni HECH QACHON
