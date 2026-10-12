@@ -126,7 +126,7 @@ class DictationProgressWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DictationProgress
-        fields = ("percent", "last_index", "draft_answers", "first_try", "active_seconds",
+        fields = ("percent", "last_index", "draft_answers", "first_try", "mistakes", "active_seconds",
                   "completed_at", "completions", "best_accuracy", "last_accuracy",
                   "last_active_seconds")
         read_only_fields = ("completed_at", "completions", "best_accuracy", "last_accuracy",
@@ -150,6 +150,19 @@ class DictationProgressWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("first_try noto'g'ri")
         if any(v not in FIRST_TRY_VALUES for v in value.values()):
             raise serializers.ValidationError("first_try qiymati: ok | wrong | skipped")
+        return value
+
+    def validate_mistakes(self, value):
+        """{"3": [0, 4]} — gap indeksi → so'z indekslari (manfiy bo'lmagan butun son)."""
+        import json
+
+        if not isinstance(value, dict) or len(value) > 5000 or len(json.dumps(value)) > MAX_PROGRESS_JSON:
+            raise serializers.ValidationError("mistakes noto'g'ri yoki juda katta")
+        for key, words in value.items():
+            if not str(key).isdigit() or not isinstance(words, list) or len(words) > 500:
+                raise serializers.ValidationError("mistakes: {gap: [so'z indekslari]}")
+            if any(not isinstance(w, int) or isinstance(w, bool) or w < 0 for w in words):
+                raise serializers.ValidationError("mistakes: so'z indekslari butun son bo'lsin")
         return value
 
 

@@ -188,6 +188,7 @@ class DictationViewSet(viewsets.ReadOnlyModelViewSet):
         entry.last_index = 0
         entry.draft_answers = {}
         entry.first_try = {}
+        entry.mistakes = {}
         entry.active_seconds = 0
         entry.save()
         return Response(DictationProgressWriteSerializer(entry).data)

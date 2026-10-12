@@ -23,7 +23,7 @@ from apps.common.admin import BaseModelAdmin
 from . import views_admin
 from .models import (
     AIJob, AllYoutubeVideo, ChannelIngestTask, DICTATION_PROXIES, DeadVideoReport,
-    Dictation, DictationProgress, DictationReaction,
+    Dictation, DictationProgress, DictationReaction, VocabWord,
     IeltsListeningTest, SHORT_PROXIES, Short, ShortReaction,
     ShortQuestionFeedback, ShortReport,
     DictationQuestionFeedback, DictationReport,
@@ -486,6 +486,18 @@ class DictationProgressAdmin(BaseModelAdmin):
     search_fields = ("user__username", "user__display_name", "dictation__title")
     autocomplete_fields = ("user", "dictation")
     list_select_related = ("user", "dictation")
+
+
+@admin.register(VocabWord)
+class VocabWordAdmin(BaseModelAdmin):
+    """Foydalanuvchilarning shaxsiy lug'ati — faqat ko'rish (ular o'zi qo'shadi)."""
+    list_display = ("display", "user", "dictation", "created_at")
+    search_fields = ("word", "user__username", "user__display_name")
+    list_select_related = ("user", "dictation")
+    readonly_fields = ("user", "word", "display", "context", "dictation", "created_at")
+
+    def has_add_permission(self, request):
+        return False
 
 
 # --- Shorts admin --------------------------------------------------------

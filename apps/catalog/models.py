@@ -1066,6 +1066,10 @@ class DictationProgress(TimeStampedModel):
     #: Har gapning BIRINCHI tekshiruvi: {"0": "ok"|"wrong"|"skipped"}. Aniqlik
     #: shundan hisoblanadi — qayta urinib to'g'rilangan gap "ok" hisoblanmaydi.
     first_try = models.JSONField("Birinchi urinish natijalari", default=dict, blank=True)
+    #: Birinchi tekshiruvda XATO yozilgan so'zlar: {"3": [0, 4]} — gap indeksi →
+    #: shu gap matnidagi so'z indekslari (`text.split()`). Tugatish ekrani
+    #: "qaysi so'zni xato yozdim" ni shundan chizadi; "Davom ettirish"da ham saqlanadi.
+    mistakes = models.JSONField("Xato yozilgan so'zlar", default=dict, blank=True)
     active_seconds = models.PositiveIntegerField(
         "Faol vaqt (joriy urinish, s)", default=0,
         help_text="Faqat tab ochiq va foydalanuvchi faol bo'lgan vaqt.",
@@ -1085,6 +1089,38 @@ class DictationProgress(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user} — {self.dictation.title} ({self.percent}%)"
+
+
+class VocabWord(TimeStampedModel):
+    """Shaxsiy lug'at — foydalanuvchi diktant matnida "bilmayman" deb bosgan so'z.
+
+    Hozircha faqat yig'iladi va profilda ko'rinadi (keyin takrorlash va h.k.).
+    Bitta so'z bir marta: `word` — kichik harfli, chetdagi tinish belgilarisiz
+    shakl; `display` — matnda qanday turgan bo'lsa (masalan "Peacocks").
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Foydalanuvchi",
+        on_delete=models.CASCADE, related_name="vocab_words",
+    )
+    word = models.CharField("So'z", max_length=64)
+    display = models.CharField("Matndagi ko'rinishi", max_length=64)
+    context = models.CharField("Gap (kontekst)", max_length=400, blank=True)
+    dictation = models.ForeignKey(
+        Dictation, verbose_name="Qaysi darsdan", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="vocab_words",
+    )
+
+    class Meta:
+        verbose_name = "Lug'at so'zi"
+        verbose_name_plural = "Foydalanuvchi lug'atlari"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=("user", "word"), name="uniq_vocab_user_word"),
+        ]
+
+    def __str__(self):
+        return f"{self.user} — {self.display}"
 
 
 class IeltsListeningTest(TimeStampedModel):

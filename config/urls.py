@@ -13,6 +13,7 @@ from apps.accounts.refresh import SessionTokenRefreshView
 from apps.billing import views as billing_views
 from apps.catalog import views as catalog_views
 from apps.catalog import legacy_views
+from apps.catalog import vocab as vocab_views
 from apps.billing import wallet_views
 from apps.click import api as click_api
 from apps.click import views as click_views
@@ -48,7 +49,9 @@ api_patterns = [
     path("auth/username-check/", account_views.username_check, name="username-check"),
     path("me/activity/", account_views.my_activity, name="me-activity"),
     path("me/activity/track/", account_views.track_activity, name="me-track"),
-    path("me/vocab/", legacy_views.categories_list, name="me-vocab"),
+    path("me/vocab/", vocab_views.my_vocab, name="me-vocab"),
+    path("me/vocab/words/", vocab_views.my_vocab_words, name="me-vocab-words"),
+    path("me/vocab/<int:pk>/", vocab_views.my_vocab_item, name="me-vocab-item"),
     path("me/attempts/", legacy_views.categories_list, name="me-attempts"),
     path("leaderboard/", account_views.leaderboard, name="leaderboard"),
 
