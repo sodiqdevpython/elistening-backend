@@ -1,0 +1,493 @@
+{% extends "admin/base_site.html" %}
+{% comment %}
+  📊 To'lovlar dashboard — `billing/admin.py::PaymentsDashboardAdmin`.
+  Ma'lumot `data/` JSON'dan (`billing/dashboard.py`). Filtrlar URL'da ham
+  saqlanadi — sahifani yangilasangiz yoki havolani ulashsangiz o'sha holat.
+
+  Grafik ranglari OB'EKTGA bog'langan (Jami — ko'k, Paynet — to'q sariq,
+  Click — yashil-moviy) va filtr o'zgarsa ham o'zgarmaydi. Ular dataviz
+  validatoridan admin fonlariga (#fff / #121212) qarshi o'tkazilgan; yorug'
+  rejimda Click 3:1 dan past — shuning uchun legend va jadval doim bor.
+  Foydalanuvchi ismlari faqat `textContent` bilan qo'yiladi (XSS yo'q).
+{% endcomment %}
+
+{% block extrahead %}{{ block.super }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  .pd-root {
+    --series-total: #2a78d6;
+    --series-paynet: #eb6834;
+    --series-click: #1baf7a;
+    --pd-muted: #898781;
+    --pd-grid: #ececea;
+    --pd-negative: #d03b3b;
+    font-variant-numeric: normal;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .pd-root {
+      --series-total: #3987e5;
+      --series-paynet: #d95926;
+      --series-click: #199e70;
+      --pd-grid: #2c2c2a;
+      --pd-negative: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .pd-root {
+    --series-total: #3987e5;
+    --series-paynet: #d95926;
+    --series-click: #199e70;
+    --pd-grid: #2c2c2a;
+    --pd-negative: #e66767;
+  }
+
+  .pd-root { display: flex; flex-direction: column; gap: 16px; max-width: 1400px; }
+  .pd-loading .pd-dim { opacity: .55; transition: opacity .15s; }
+
+  /* Filtrlar — bitta qator, hammasidan yuqorida, hammasiga ta'sir qiladi. */
+  .pd-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+  .pd-presets { display: inline-flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+  .pd-presets button {
+    background: var(--body-bg); color: var(--body-fg); border: 0; padding: 7px 12px;
+    font-size: 13px; cursor: pointer; border-right: 1px solid var(--border-color);
+  }
+  .pd-presets button:last-child { border-right: 0; }
+  .pd-presets button:hover { background: var(--darkened-bg); }
+  .pd-presets button[aria-pressed="true"] { background: var(--primary); color: #fff; font-weight: 700; }
+  .pd-filters label { font-size: 13px; color: var(--body-quiet-color); display: inline-flex; gap: 6px; align-items: center; }
+  .pd-filters input, .pd-filters select { font-size: 13px; padding: 6px 8px; }
+  .pd-filters input[type="search"] { min-width: 260px; }
+
+  /* Raqamli kartochkalar */
+  /* Asosiy raqam kengroq ustunda — "1 354 000 so'm" bitta qatorda qoladi.
+     Kenglik ekranga emas, sahifa maydoniga qarab (admin yon menyusi joy oladi). */
+  .pd-root { container-type: inline-size; }
+  .pd-kpis { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  @container (min-width: 420px) {
+    .pd-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .pd-kpi-hero { grid-column: 1 / -1; }
+  }
+  @container (min-width: 960px) {
+    .pd-kpis { grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr)); }
+    .pd-kpi-hero { grid-column: auto; }
+  }
+  .pd-kpi { border: 1px solid var(--hairline-color); border-radius: 12px; padding: 14px 16px; background: var(--body-bg); min-width: 0; }
+  .pd-kpi-label { font-size: 12.5px; color: var(--body-quiet-color); }
+  .pd-kpi-value { font-size: clamp(20px, 4cqi, 26px); font-weight: 700; margin-top: 4px; color: var(--body-fg); white-space: nowrap; }
+  .pd-kpi-hero .pd-kpi-value { font-size: 40px; line-height: 1.1; }
+  .pd-unit { font-size: .55em; font-weight: 600; color: var(--body-quiet-color); margin-left: .25em; }
+  .pd-kpi-sub { font-size: 12px; color: var(--body-quiet-color); margin-top: 4px; }
+
+  .pd-card { border: 1px solid var(--hairline-color); border-radius: 12px; padding: 16px 18px; background: var(--body-bg); }
+  .pd-card-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .pd-card h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--body-fg); background: none; padding: 0; text-transform: none; letter-spacing: 0; }
+  .pd-hint { font-size: 12px; color: var(--body-quiet-color); margin: 8px 0 0; }
+
+  /* Legend — chiziq kalit (line chart) va to'rtburchak (stacked bar). */
+  .pd-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--body-fg); }
+  .pd-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .pd-key-line { width: 16px; height: 2px; border-radius: 2px; display: inline-block; }
+  .pd-key-box { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  /* Ulush — gorizontal stacked bar, segmentlar orasida 2px fon bo'shlig'i. */
+  .pd-share-bar { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; background: var(--darkened-bg); }
+  .pd-share-bar button { border: 0; padding: 0; cursor: pointer; min-width: 2px; }
+  .pd-share-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin-top: 12px; }
+  .pd-share-row {
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--body-fg);
+    background: none; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; cursor: pointer; text-align: left;
+  }
+  .pd-share-row:hover { background: var(--darkened-bg); }
+  .pd-share-row[aria-pressed="true"] { border-color: var(--border-color); background: var(--darkened-bg); }
+  .pd-share-row strong { font-weight: 700; }
+  .pd-share-row small { color: var(--body-quiet-color); }
+
+  .pd-chart { position: relative; height: 320px; }
+  .pd-chart canvas { cursor: pointer; }
+
+  .pd-chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 4px 3px 10px;
+    border: 1px solid var(--border-color); border-radius: 999px; color: var(--body-fg);
+  }
+  .pd-chip button { border: 0; background: none; cursor: pointer; color: var(--body-quiet-color); font-size: 14px; padding: 0 6px; }
+  .pd-meta { font-size: 13px; color: var(--body-quiet-color); }
+
+  .pd-table-wrap { overflow-x: auto; }
+  table.pd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pd-table th { text-align: left; font-weight: 600; color: var(--body-quiet-color); border-bottom: 1px solid var(--hairline-color); padding: 8px; white-space: nowrap; background: none; }
+  .pd-table td { padding: 8px; border-bottom: 1px solid var(--hairline-color); vertical-align: top; color: var(--body-fg); }
+  .pd-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pd-table .neg { color: var(--pd-negative); }
+  .pd-user small { display: block; color: var(--body-quiet-color); }
+  .pd-prov { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .pd-tag { font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border-color); color: var(--body-quiet-color); margin-left: 6px; }
+  .pd-empty { color: var(--body-quiet-color); padding: 18px 8px; text-align: center; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Bosh sahifa</a> ›
+  <a href="{% url 'admin:app_list' app_label='billing' %}">{{ opts.app_config.verbose_name }}</a> ›
+  To'lovlar dashboard
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="pd" class="pd-root" data-url="{{ data_url }}">
+  <div class="pd-filters" role="search">
+    <div class="pd-presets" role="group" aria-label="Davr">
+      <button type="button" data-preset="today">Bugun</button>
+      <button type="button" data-preset="7">7 kun</button>
+      <button type="button" data-preset="30">30 kun</button>
+      <button type="button" data-preset="90">90 kun</button>
+      <button type="button" data-preset="month">Shu oy</button>
+      <button type="button" data-preset="all">Hammasi</button>
+    </div>
+    <label>Dan <input type="date" id="pd-from"></label>
+    <label>Gacha <input type="date" id="pd-to"></label>
+    <select id="pd-provider" aria-label="To'lov tizimi">
+      <option value="">Barcha tizimlar</option>
+      <option value="paynet">Paynet</option>
+      <option value="click">Click</option>
+    </select>
+    <select id="pd-granularity" aria-label="Guruhlash">
+      <option value="day">Kunlik</option>
+      <option value="week">Haftalik</option>
+      <option value="month">Oylik</option>
+    </select>
+    <input type="search" id="pd-q" placeholder="Ism, @username, Telegram ID yoki tranzaksiya ID">
+  </div>
+
+  <div class="pd-kpis pd-dim">
+    <div class="pd-kpi pd-kpi-hero">
+      <div class="pd-kpi-label">Sof tushum</div>
+      <div class="pd-kpi-value" id="kpi-net">—</div>
+      <div class="pd-kpi-sub" id="kpi-refunds"></div>
+    </div>
+    <div class="pd-kpi"><div class="pd-kpi-label">To'lovlar soni</div><div class="pd-kpi-value" id="kpi-count">—</div></div>
+    <div class="pd-kpi"><div class="pd-kpi-label">To'lagan foydalanuvchilar</div><div class="pd-kpi-value" id="kpi-payers">—</div></div>
+    <div class="pd-kpi"><div class="pd-kpi-label">O'rtacha to'lov</div><div class="pd-kpi-value" id="kpi-avg">—</div></div>
+  </div>
+
+  <section class="pd-card pd-dim">
+    <div class="pd-card-head"><h2>To'lov tizimlari ulushi</h2><span class="pd-meta">Bosing — jadval shu tizim bo'yicha</span></div>
+    <div class="pd-share-bar" id="share-bar" role="img" aria-label="To'lov tizimlari ulushi"></div>
+    <div class="pd-share-rows" id="share-rows"></div>
+  </section>
+
+  <section class="pd-card pd-dim">
+    <div class="pd-card-head">
+      <h2>Tushum vaqt bo'yicha</h2>
+      <div class="pd-legend" id="chart-legend"></div>
+    </div>
+    <div class="pd-chart"><canvas id="pd-chart" role="img" aria-label="Tushum vaqt bo'yicha (jadval pastda)"></canvas></div>
+    <p class="pd-hint">Grafikdagi nuqtani bosing — o'sha kun/hafta/oydagi to'lovlar pastdagi jadvalda chiqadi.</p>
+  </section>
+
+  <section class="pd-card pd-dim">
+    <div class="pd-card-head">
+      <h2>To'lovlar</h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="pd-chip" id="bucket-chip" hidden><span id="bucket-label"></span><button type="button" id="bucket-clear" aria-label="Davr tanlovini bekor qilish">✕</button></span>
+        <span class="pd-meta" id="table-meta"></span>
+      </div>
+    </div>
+    <div class="pd-table-wrap">
+      <table class="pd-table">
+        <thead><tr>
+          <th>Vaqt</th><th>Foydalanuvchi</th><th>Tizim</th>
+          <th class="num">Summa</th><th class="num">Keyingi balans</th><th>Tranzaksiya ID</th>
+        </tr></thead>
+        <tbody id="pd-rows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  const root = document.getElementById('pd')
+  const $ = (id) => document.getElementById(id)
+  const SERIES = [
+    { key: 'total', label: 'Jami', css: '--series-total' },
+    { key: 'paynet', label: 'Paynet', css: '--series-paynet' },
+    { key: 'click', label: 'Click', css: '--series-click' },
+  ]
+  const nf = new Intl.NumberFormat('ru-RU')
+  const money = (n) => nf.format(n).replace(/ /g, ' ') + " so'm"
+  const compact = (n) => {
+    const a = Math.abs(n)
+    if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace('.0', '') + ' mln'
+    if (a >= 1e3) return Math.round(n / 1e3) + ' ming'
+    return String(n)
+  }
+  const color = (css) => getComputedStyle(root).getPropertyValue(css).trim()
+  const el = (tag, props = {}, children = []) => {
+    const node = document.createElement(tag)
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'text') node.textContent = v
+      else if (k === 'style') Object.assign(node.style, v)
+      else node.setAttribute(k, v)
+    }
+    for (const c of children) if (c) node.append(c)
+    return node
+  }
+
+  // ── Holat (URL bilan sinxron) ───────────────────────────────────────
+  const iso = (d) => d.toISOString().slice(0, 10)
+  const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return iso(d) }
+  const daysAgo = (n) => { const d = new Date(today()); d.setDate(d.getDate() - n); return iso(d) }
+  const url = new URLSearchParams(location.search)
+  const state = {
+    from: url.get('from') || daysAgo(29), to: url.get('to') || today(),
+    provider: url.get('provider') || '', granularity: url.get('granularity') || 'day',
+    q: url.get('q') || '', bucket: url.get('bucket') || '', preset: url.get('preset') || (url.get('from') ? '' : '30'),
+  }
+  let data = null
+  let chart = null
+
+  function syncControls() {
+    $('pd-from').value = state.from === 'all' ? '' : state.from
+    $('pd-to').value = state.to
+    $('pd-provider').value = state.provider
+    $('pd-granularity').value = state.granularity
+    $('pd-q').value = state.q
+    for (const b of root.querySelectorAll('[data-preset]')) b.setAttribute('aria-pressed', String(b.dataset.preset === state.preset))
+  }
+
+  function query() {
+    const p = new URLSearchParams()
+    for (const k of ['from', 'to', 'provider', 'granularity', 'q', 'bucket', 'preset']) if (state[k]) p.set(k, state[k])
+    return p
+  }
+
+  let seq = 0
+  async function load() {
+    const p = query()
+    history.replaceState(null, '', '?' + p.toString())
+    root.classList.add('pd-loading')  // eski ko'rinish qoladi — sakrash yo'q
+    const mine = ++seq
+    try {
+      const res = await fetch(root.dataset.url + '?' + p.toString(), { credentials: 'same-origin' })
+      if (!res.ok) throw new Error(res.status)
+      const json = await res.json()
+      if (mine !== seq) return
+      data = json
+      if (state.from === 'all') state.from = data.filters.from
+      render()
+    } catch (e) {
+      $('table-meta').textContent = "Ma'lumotni yuklab bo'lmadi: " + e.message
+    } finally {
+      if (mine === seq) root.classList.remove('pd-loading')
+    }
+  }
+
+  // ── Chizish ──────────────────────────────────────────────────────────
+  function render() {
+    const k = data.kpis
+    const sum = (id, n) => $(id).replaceChildren(nf.format(n).replace(/ /g, ' '), el('span', { class: 'pd-unit', text: "so'm" }))
+    sum('kpi-net', k.net_uzs)
+    $('kpi-refunds').textContent = k.refunds_count
+      ? `Tushgan ${money(k.deposits_uzs)} · bekor qilingan ${k.refunds_count} ta (${money(k.refunds_uzs)})`
+      : `Tushgan ${money(k.deposits_uzs)}`
+    $('kpi-count').textContent = nf.format(k.deposits_count).replace(/ /g, ' ')
+    $('kpi-payers').textContent = nf.format(k.payers).replace(/ /g, ' ')
+    sum('kpi-avg', k.avg_uzs)
+    renderShare()
+    renderChart()
+    renderTable()
+  }
+
+  function renderShare() {
+    const bar = $('share-bar'), rows = $('share-rows')
+    bar.replaceChildren(); rows.replaceChildren()
+    const total = data.share.reduce((s, x) => s + Math.max(0, x.uzs), 0)
+    for (const item of data.share) {
+      const css = item.provider === 'paynet' ? '--series-paynet' : '--series-click'
+      const pct = total ? Math.round(Math.max(0, item.uzs) / total * 100) : 0
+      const label = `${item.label}: ${money(item.uzs)} · ${item.count} ta · ${pct}%`
+      if (pct > 0) {
+        const seg = el('button', { type: 'button', title: label, 'aria-label': label,
+          style: { flex: String(Math.max(0, item.uzs)), background: color(css) } })
+        seg.onclick = () => setProvider(item.provider)
+        bar.append(seg)
+      }
+      const row = el('button', { type: 'button', class: 'pd-share-row', 'aria-pressed': String(state.provider === item.provider) }, [
+        el('span', { class: 'pd-key-box', style: { background: color(css) } }),
+        el('span', { text: item.label }),
+        el('strong', { text: money(item.uzs) }),
+        el('small', { text: `${item.count} ta · ${pct}%` }),
+      ])
+      row.onclick = () => setProvider(state.provider === item.provider ? '' : item.provider)
+      rows.append(row)
+    }
+  }
+
+  function visibleSeries() {
+    // Provayder tanlansa faqat o'shaniki (jami = o'sha). Rang o'zgarmaydi.
+    return state.provider ? SERIES.filter((s) => s.key === state.provider) : SERIES
+  }
+
+  // Crosshair + tanlangan davr bandi.
+  const crosshair = {
+    id: 'pdCrosshair',
+    beforeDatasetsDraw(c) {
+      if (!data || !state.bucket) return
+      const i = data.series.findIndex((s) => s.bucket === state.bucket)
+      if (i < 0) return
+      const x = c.scales.x.getPixelForValue(i)
+      const step = data.series.length > 1 ? Math.abs(c.scales.x.getPixelForValue(1) - c.scales.x.getPixelForValue(0)) : 40
+      const ctx = c.ctx
+      ctx.save(); ctx.fillStyle = color('--pd-grid')
+      ctx.fillRect(x - step / 2, c.chartArea.top, step, c.chartArea.bottom - c.chartArea.top)
+      ctx.restore()
+    },
+    afterDatasetsDraw(c) {
+      const active = c.tooltip && c.tooltip.getActiveElements()
+      if (!active || !active.length) return
+      const x = active[0].element.x, ctx = c.ctx
+      ctx.save(); ctx.strokeStyle = color('--pd-muted'); ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(x, c.chartArea.top); ctx.lineTo(x, c.chartArea.bottom); ctx.stroke()
+      ctx.restore()
+    },
+  }
+
+  function renderChart() {
+    const legend = $('chart-legend')
+    legend.replaceChildren(...visibleSeries().map((s) =>
+      el('span', {}, [el('span', { class: 'pd-key-line', style: { background: color(s.css) } }), el('span', { text: s.label })])))
+    if (!window.Chart) { setTimeout(renderChart, 150); return }
+    const labels = data.series.map((s) => s.label)
+    const dense = data.series.length > 45
+    const datasets = visibleSeries().map((s) => ({
+      label: s.label,
+      data: data.series.map((row) => row[s.key]),
+      borderColor: color(s.css),
+      backgroundColor: color(s.css),
+      borderWidth: 2,
+      pointRadius: dense ? 0 : 3,
+      pointHoverRadius: 5,
+      pointBorderColor: getComputedStyle(document.body).backgroundColor,
+      pointBorderWidth: 2,
+      tension: 0.25,
+    }))
+    const muted = color('--pd-muted'), grid = color('--pd-grid')
+    if (chart) chart.destroy()
+    chart = new Chart($('pd-chart'), {
+      type: 'line',
+      data: { labels, datasets },
+      plugins: [crosshair],
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            usePointStyle: true,
+            callbacks: {
+              label: (ctx) => ` ${money(ctx.parsed.y)}  ${ctx.dataset.label}`,
+              footer: (items) => items.length ? `${data.series[items[0].dataIndex].count} ta to'lov · bosing — jadvalda` : '',
+            },
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true, autoSkipPadding: 16 } },
+          y: { beginAtZero: true, border: { display: false }, grid: { color: grid }, ticks: { color: muted, callback: (v) => compact(v) } },
+        },
+      },
+    })
+  }
+
+  // Nuqta bosilsa — o'sha davr to'lovlari jadvalda (qayta bosilsa — hammasi).
+  // Chart.js'ning onClick'i emas: u faqat chizma maydoni ichida ishlaydi va
+  // kadrga bog'langan; bu yerda ustunning istalgan joyi, sana yozuvi ham.
+  $('pd-chart').addEventListener('click', (e) => {
+    if (!chart || !data) return
+    const x = e.clientX - e.currentTarget.getBoundingClientRect().left
+    const area = chart.chartArea
+    if (x < area.left || x > area.right) return
+    const i = Math.round(chart.scales.x.getValueForPixel(x))
+    if (!(i >= 0 && i < data.series.length)) return
+    const bucket = data.series[i].bucket
+    state.bucket = state.bucket === bucket ? '' : bucket
+    load()
+  })
+
+  function renderTable() {
+    const t = data.table
+    $('bucket-chip').hidden = !t.bucket
+    $('bucket-label').textContent = t.bucket ? 'Davr: ' + t.bucket_label : ''
+    $('table-meta').textContent = t.count
+      ? `${t.count} ta · ${money(t.total_uzs)}` + (t.shown < t.count ? ` (oxirgi ${t.shown} tasi ko'rsatilgan)` : '')
+      : ''
+    const body = $('pd-rows')
+    body.replaceChildren()
+    if (!t.rows.length) {
+      body.append(el('tr', {}, [el('td', { colspan: '6', class: 'pd-empty', text: "Bu davrda to'lov yo'q" })]))
+      return
+    }
+    for (const r of t.rows) {
+      const u = r.user
+      const handle = u.username && !/^tg\d+$/.test(u.username) ? '@' + u.username : ''
+      const who = el('a', { href: u.admin_url, text: u.name || handle || ('ID ' + (u.telegram_id || u.id)) })
+      const sub = [handle && u.name ? handle : '', u.telegram_id ? 'TG ' + u.telegram_id : ''].filter(Boolean).join(' · ')
+      const css = r.provider === 'paynet' ? '--series-paynet' : '--series-click'
+      const neg = r.amount_uzs < 0
+      body.append(el('tr', {}, [
+        el('td', { text: r.at, style: { whiteSpace: 'nowrap' } }),
+        el('td', { class: 'pd-user' }, [who, sub ? el('small', { text: sub }) : null]),
+        el('td', {}, [el('span', { class: 'pd-prov' }, [
+          el('span', { class: 'pd-key-line', style: { background: color(css) } }),
+          el('span', { text: r.provider_label }),
+        ]), r.kind === 'refund' ? el('span', { class: 'pd-tag', text: 'bekor qilingan' }) : null]),
+        el('td', { class: 'num' + (neg ? ' neg' : ''), text: (neg ? '−' : '+') + money(Math.abs(r.amount_uzs)) }),
+        el('td', { class: 'num', text: r.balance_after_uzs == null ? '—' : money(r.balance_after_uzs) }),
+        el('td', { text: r.external_id || '—' }),
+      ]))
+    }
+  }
+
+  // ── Boshqaruv ────────────────────────────────────────────────────────
+  function setProvider(p) { state.provider = p; syncControls(); load() }
+
+  for (const b of root.querySelectorAll('[data-preset]')) {
+    b.onclick = () => {
+      const p = b.dataset.preset
+      state.preset = p; state.bucket = ''
+      state.to = today()
+      if (p === 'today') state.from = today()
+      else if (p === 'month') state.from = today().slice(0, 8) + '01'
+      else if (p === 'all') state.from = 'all'
+      else state.from = daysAgo(Number(p) - 1)
+      if (p === 'all' && state.granularity === 'day') state.granularity = 'month'
+      syncControls(); load()
+    }
+  }
+  const onRange = () => {
+    state.from = $('pd-from').value || state.from; state.to = $('pd-to').value || state.to
+    state.preset = ''; state.bucket = ''; syncControls(); load()
+  }
+  $('pd-from').onchange = onRange
+  $('pd-to').onchange = onRange
+  $('pd-provider').onchange = (e) => setProvider(e.target.value)
+  $('pd-granularity').onchange = (e) => { state.granularity = e.target.value; state.bucket = ''; load() }
+  let qTimer = 0
+  $('pd-q').oninput = (e) => {
+    clearTimeout(qTimer)
+    qTimer = setTimeout(() => { state.q = e.target.value.trim(); load() }, 350)
+  }
+  $('bucket-clear').onclick = () => { state.bucket = ''; load() }
+
+  // Admin mavzusi (yorug'/qorong'i) almashsa — ranglar yangi qiymatdan qayta chiziladi.
+  const repaint = () => { if (data) render() }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', repaint)
+  new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+
+  syncControls()
+  load()
+})()
+</script>
+{% endblock %}

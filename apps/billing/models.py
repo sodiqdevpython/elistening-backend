@@ -343,6 +343,20 @@ class WalletTransaction(TimeStampedModel):
         return None if self.balance_after_tiyin is None else self.balance_after_tiyin // 100
 
 
+class PaymentsDashboard(WalletTransaction):
+    """Admin menyusidagi "📊 To'lovlar dashboard" — JADVAL YARATMAYDI (proxy).
+
+    Admin'da alohida bo'lim bo'lib ko'rinishi uchungina kerak; sahifaning
+    o'zi `billing/admin.py::PaymentsDashboardAdmin`, hisob-kitob
+    `billing/dashboard.py` da.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = "📊 To'lovlar dashboard"
+        verbose_name_plural = "📊 To'lovlar dashboard"
+
+
 class DailyUsage(TimeStampedModel):
     """Kunlik limit hisobi — har (foydalanuvchi, sana, tur, kontent) NOYOB.
 

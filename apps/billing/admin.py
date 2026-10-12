@@ -2,7 +2,9 @@ from django.contrib import admin
 
 from apps.common.admin import BaseModelAdmin
 
-from .models import InviteReward, Payment, Plan, Subscription, SubscriptionEvent, WalletTransaction
+from .models import (
+    InviteReward, Payment, PaymentsDashboard, Plan, Subscription, SubscriptionEvent, WalletTransaction,
+)
 
 
 @admin.register(Plan)
@@ -129,3 +131,58 @@ class WalletTransactionAdmin(BaseModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(PaymentsDashboard)
+class PaymentsDashboardAdmin(admin.ModelAdmin):
+    """📊 To'lovlar dashboard — grafik, filtrlar va "kim qancha to'lagan" jadvali.
+
+    Ro'yxat sahifasi o'rniga dashboard chiziladi; ma'lumot `data/` JSON'dan
+    (`billing/dashboard.py`). Kirish — faqat admin: superuser yoki hamyon
+    tarixini ko'rish huquqi borlar.
+    """
+
+    def has_view_permission(self, request, obj=None):
+        user = request.user
+        return user.is_active and user.is_staff and (
+            user.is_superuser or user.has_perm("billing.view_wallettransaction"))
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_urls(self):
+        from django.urls import path
+
+        custom = [path("data/", self.admin_site.admin_view(self.data_view),
+                       name="billing_paymentsdashboard_data")]
+        return custom + super().get_urls()
+
+    def changelist_view(self, request, extra_context=None):
+        from django.core.exceptions import PermissionDenied
+        from django.template.response import TemplateResponse
+
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "To'lovlar dashboard",
+            "opts": self.model._meta,
+            "data_url": "data/",
+        }
+        return TemplateResponse(request, "admin/billing/payments_dashboard.html", context)
+
+    def data_view(self, request):
+        from django.core.exceptions import PermissionDenied
+        from django.http import JsonResponse
+
+        from .dashboard import dashboard_data
+
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        return JsonResponse(dashboard_data(request.GET))

@@ -217,7 +217,7 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = env("CORS_ALLOW_ALL")
 # Prod domen(lar)i `EXTRA_ORIGINS` env orqali qo'shiladi (masalan
 # https://listening.uz) — admin/login HTTPS'da CSRF xatosiz ishlashi uchun SHART.
-_BASE_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://192.168.1.178:5173", "https://sodiqdevpython.jprq.live"]
+_BASE_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://192.168.1.178:5173", "https://sodiqdevpython.jprq.live", "https://sodiqdevpython.ux.live"]
 CORS_ALLOWED_ORIGINS = _BASE_ORIGINS + env("EXTRA_ORIGINS")
 CSRF_TRUSTED_ORIGINS = _BASE_ORIGINS + env("EXTRA_ORIGINS")
 
