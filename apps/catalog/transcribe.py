@@ -336,6 +336,15 @@ def transcribe_dictation(dictation: Dictation, *, language: str = "en") -> Dicta
         "transcription_status", "transcription_error", "updated_at",
     ])
 
+    # VBR mp3 → CBR: aks holda saytda bo'laklar 1 s gacha adashib yangraydi
+    # (`audio_cbr.py`). Bu orqa fonda (worker) — admin saqlashi sekinlashmaydi.
+    # O'tkazib bo'lmasa ham transkript to'xtamaydi.
+    try:
+        from .audio_cbr import ensure_cbr
+        ensure_cbr(dictation)
+    except Exception:
+        logger.exception("Audio CBR'ga o'tkazilmadi: dictation #%s", dictation.pk)
+
     try:
         with _prepare_audio(dictation) as audio_path:
             # Hajm cheklovi (OpenAI Whisper 25 MB).

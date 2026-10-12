@@ -186,6 +186,21 @@ def audio_seconds(path: Path, body: list[dict]) -> int:
     return (body[-1]["end_ms"] + 500) // 1000
 
 
+def to_cbr_rel(audio_rel: str) -> str:
+    """Yuklangan VBR mp3 → CBR (`apps/catalog/audio_cbr.py`): butun dars bitta
+    fayl, bo'laklar esa unga surib ijro qilinadi — VBR'da Chrome 1 s gacha
+    adashadi. Yangi nisbiy yo'lni qaytaradi; eski fayl o'chiriladi."""
+    from apps.catalog.audio_cbr import convert_to_cbr, needs_cbr
+
+    src = Path(settings.MEDIA_ROOT) / audio_rel
+    if not needs_cbr(src):
+        return audio_rel
+    out = convert_to_cbr(src)
+    if out != src:
+        src.unlink(missing_ok=True)
+    return str(Path(audio_rel).with_name(out.name)).replace("\\", "/")
+
+
 def save_lesson(rec: dict, audio_rel: str, publish: bool) -> str:
     """Bitta darsni bazaga yozadi → `new` | `updated` | `empty`.
 
@@ -451,6 +466,7 @@ class Command(BaseCommand):
                     ext = os.path.splitext(rec["audioSrc"].split("?")[0])[1] or ".mp3"
                     audio_rel = f"{MEDIA_SUBDIR}/{t}/{lesson_file(meta)}{ext}"
                     size = await download(client, rec["audioSrc"], Path(settings.MEDIA_ROOT) / audio_rel)
+                    audio_rel = await sync_to_async(to_cbr_rel, thread_sensitive=False)(audio_rel)
                     detail = f"audio {size / 1e6:.1f} MB"
                 else:
                     detail = f"YouTube {rec['youtubeVideoId']}"
