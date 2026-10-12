@@ -1059,10 +1059,23 @@ class DictationProgress(TimeStampedModel):
         Dictation, verbose_name="Diktant",
         on_delete=models.CASCADE, related_name="progress_entries",
     )
+    # ── Joriy urinish ("Davom ettirish" shundan tiklanadi) ──
     percent = models.PositiveSmallIntegerField("Foiz", default=0)
     last_index = models.PositiveIntegerField("Oxirgi chunk", default=0)
     draft_answers = models.JSONField("Saqlangan javoblar", default=dict, blank=True)
-    completed_at = models.DateTimeField("Tugatilgan", null=True, blank=True)
+    #: Har gapning BIRINCHI tekshiruvi: {"0": "ok"|"wrong"|"skipped"}. Aniqlik
+    #: shundan hisoblanadi — qayta urinib to'g'rilangan gap "ok" hisoblanmaydi.
+    first_try = models.JSONField("Birinchi urinish natijalari", default=dict, blank=True)
+    active_seconds = models.PositiveIntegerField(
+        "Faol vaqt (joriy urinish, s)", default=0,
+        help_text="Faqat tab ochiq va foydalanuvchi faol bo'lgan vaqt.",
+    )
+    # ── Tugatilganlar (oxirigacha yozilgan har urinish) ──
+    completed_at = models.DateTimeField("Oxirgi marta tugatilgan", null=True, blank=True)
+    completions = models.PositiveIntegerField("Necha marta tugatilgan", default=0)
+    best_accuracy = models.PositiveSmallIntegerField("Eng yaxshi aniqlik (%)", null=True, blank=True)
+    last_accuracy = models.PositiveSmallIntegerField("Oxirgi aniqlik (%)", null=True, blank=True)
+    last_active_seconds = models.PositiveIntegerField("Oxirgi urinish vaqti (s)", default=0)
 
     class Meta:
         verbose_name = "Diktant progressi"

@@ -33,6 +33,13 @@ class DictationListSerializer(serializers.ModelSerializer):
     # Frontend YouTube thumbnail'ni `i.ytimg.com` dan yuklashi uchun ID kerak.
     # URL turlaridan (watch?v=, youtu.be/, /shorts/, /embed/) ajratib olamiz.
     youtube_id = serializers.SerializerMethodField()
+    # Kirgan foydalanuvchining shu darsdagi holati (ro'yxatda ✓ va progress
+    # chizig'i). View sahifadagi darslar uchun BITTA so'rov bilan yig'ib
+    # `context["my_progress"]` ga qo'yadi; anonim yoki boshqa joyda — null.
+    my_progress = serializers.SerializerMethodField()
+    # Mobil ilova shu maydonni kutadi (`mobile/src/data/mock.ts`), lekin u
+    # ilgari hech qachon yuborilmagan — progress chizig'i doim bo'sh edi.
+    my_progress_percent = serializers.SerializerMethodField()
 
     class Meta:
         model = Dictation
@@ -41,7 +48,15 @@ class DictationListSerializer(serializers.ModelSerializer):
             "audio_url", "is_media", "youtube_link", "youtube_id",
             "duration_sec", "duration_label", "chunks_count",
             "views", "likes", "dislikes", "practiced_time", "created_at",
+            "my_progress", "my_progress_percent",
         )
+
+    def get_my_progress(self, obj):
+        return (self.context.get("my_progress") or {}).get(obj.pk)
+
+    def get_my_progress_percent(self, obj):
+        mine = self.get_my_progress(obj)
+        return mine["percent"] if mine else None
 
     def get_youtube_id(self, obj) -> str | None:
         from . import mock_data
@@ -94,10 +109,59 @@ class DictationDetailSerializer(ProtectedFieldsMixin, DictationListSerializer):
         )
 
 
+#: Bitta urinishdagi faol vaqt chegarasi — tab kun bo'yi ochiq qolsa ham
+#: statistikani buzmasin.
+MAX_ACTIVE_SECONDS = 6 * 3600
+#: `draft_answers` / `first_try` ning taxminiy hajm chegarasi (belgi).
+MAX_PROGRESS_JSON = 200_000
+FIRST_TRY_VALUES = {"ok", "wrong", "skipped"}
+
+
 class DictationProgressWriteSerializer(serializers.ModelSerializer):
+    """Joriy urinish (yoziladi) + tugatilganlar statistikasi (faqat o'qiladi).
+
+    Tugatish ALOHIDA endpoint'da (`/complete/`) — progress saqlash uni
+    hech qachon o'zgartira olmaydi.
+    """
+
     class Meta:
         model = DictationProgress
-        fields = ("percent", "last_index", "draft_answers")
+        fields = ("percent", "last_index", "draft_answers", "first_try", "active_seconds",
+                  "completed_at", "completions", "best_accuracy", "last_accuracy",
+                  "last_active_seconds")
+        read_only_fields = ("completed_at", "completions", "best_accuracy", "last_accuracy",
+                            "last_active_seconds")
+
+    def validate_percent(self, value):
+        return min(int(value), 100)
+
+    def validate_active_seconds(self, value):
+        return min(int(value), MAX_ACTIVE_SECONDS)
+
+    def validate_draft_answers(self, value):
+        import json
+
+        if not isinstance(value, dict) or len(json.dumps(value)) > MAX_PROGRESS_JSON:
+            raise serializers.ValidationError("draft_answers juda katta yoki noto'g'ri")
+        return value
+
+    def validate_first_try(self, value):
+        if not isinstance(value, dict) or len(value) > 5000:
+            raise serializers.ValidationError("first_try noto'g'ri")
+        if any(v not in FIRST_TRY_VALUES for v in value.values()):
+            raise serializers.ValidationError("first_try qiymati: ok | wrong | skipped")
+        return value
+
+
+class DictationCompleteSerializer(serializers.Serializer):
+    """Diktant oxirigacha yozildi. Baholash mijozda (`utils/grade.ts`), shu
+    bois aniqlikni mijoz yuboradi — server faqat chegaralaydi."""
+
+    accuracy = serializers.IntegerField(min_value=0, max_value=100)
+    active_seconds = serializers.IntegerField(min_value=0)
+
+    def validate_active_seconds(self, value):
+        return min(value, MAX_ACTIVE_SECONDS)
 
 
 class ShortListSerializer(ProtectedFieldsMixin, serializers.ModelSerializer):

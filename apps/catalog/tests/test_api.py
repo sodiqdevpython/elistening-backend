@@ -234,7 +234,11 @@ class ProgressTests(ApiTestCase):
         self.client.force_login(self.user)
         response = self.client.get(f"/api/dictations/{self.dictation.slug}/progress/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"percent": 0, "last_index": 0, "draft_answers": {}})
+        data = response.json()
+        # Eski maydonlar o'zgarmagan (mobil ilova ham o'qiydi), yangilari qo'shilgan.
+        self.assertEqual({k: data[k] for k in ("percent", "last_index", "draft_answers")},
+                         {"percent": 0, "last_index": 0, "draft_answers": {}})
+        self.assertEqual((data["completions"], data["best_accuracy"], data["first_try"]), (0, None, {}))
 
     def test_post_creates_and_updates_progress(self):
         self.client.force_login(self.user)
@@ -256,3 +260,75 @@ class ProgressTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
         self.dictation.refresh_from_db()
         self.assertEqual(self.dictation.practiced_time, 5000)
+
+
+class CompletionTests(ApiTestCase):
+    """Davom ettirish, tugatish natijasi va ro'yxatdagi ✓ belgisi."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(username="finisher", password="pw12345!")
+        self.client.force_login(self.user)
+        self.url = f"/api/dictations/{self.dictation.slug}"
+
+    def post(self, path, payload):
+        return self.client.post(f"{self.url}/{path}/", json.dumps(payload),
+                                content_type="application/json")
+
+    def test_progress_saves_run_and_caps_values(self):
+        response = self.post("progress", {"percent": 150, "last_index": 1,
+                                          "draft_answers": {"0": "Hello there."},
+                                          "first_try": {"0": "ok"}, "active_seconds": 10**7})
+        self.assertEqual(response.status_code, 200)
+        entry = DictationProgress.objects.get(user=self.user)
+        self.assertEqual((entry.percent, entry.first_try), (100, {"0": "ok"}))
+        self.assertEqual(entry.active_seconds, 6 * 3600)
+
+    def test_progress_rejects_bad_first_try(self):
+        response = self.post("progress", {"percent": 10, "first_try": {"0": "maybe"}})
+        self.assertEqual(response.status_code, 400)
+
+    def test_progress_cannot_fake_completion(self):
+        self.post("progress", {"percent": 100, "completions": 99, "best_accuracy": 100})
+        entry = DictationProgress.objects.get(user=self.user)
+        self.assertEqual((entry.completions, entry.best_accuracy), (0, None))
+
+    def test_complete_records_result_and_resets_run(self):
+        self.post("progress", {"percent": 50, "last_index": 1, "draft_answers": {"0": "x"},
+                               "first_try": {"0": "wrong"}, "active_seconds": 40})
+        first = self.post("complete", {"accuracy": 80, "active_seconds": 95}).json()
+        self.assertEqual((first["completions"], first["best_accuracy"], first["last_accuracy"]), (1, 80, 80))
+        self.assertEqual((first["last_index"], first["draft_answers"], first["first_try"]), (0, {}, {}))
+        self.assertEqual((first["percent"], first["active_seconds"], first["last_active_seconds"]), (100, 0, 95))
+
+        second = self.post("complete", {"accuracy": 60, "active_seconds": 30}).json()
+        self.assertEqual((second["completions"], second["best_accuracy"], second["last_accuracy"]), (2, 80, 60))
+
+    def test_complete_validates_accuracy(self):
+        self.assertEqual(self.post("complete", {"accuracy": 101, "active_seconds": 1}).status_code, 400)
+        self.assertEqual(self.client.post(f"{self.url}/complete/", {}).status_code, 400)
+
+    def test_list_shows_my_progress_only_to_me(self):
+        self.post("complete", {"accuracy": 90, "active_seconds": 60})
+        mine = self.client.get("/api/dictations/").json()["results"][0]["my_progress"]
+        self.assertEqual((mine["completed"], mine["best_accuracy"], mine["percent"]), (True, 90, 100))
+
+        other = User.objects.create_user(username="other", password="pw12345!")
+        self.client.force_login(other)
+        self.assertIsNone(self.client.get("/api/dictations/").json()["results"][0]["my_progress"])
+        self.client.logout()
+        self.assertIsNone(self.client.get("/api/dictations/").json()["results"][0]["my_progress"])
+
+    def test_list_progress_costs_one_query_regardless_of_page_size(self):
+        for i in range(6):
+            Dictation.objects.create(title=f"Extra {i}", type=Dictation.Type.SHORT_STORY, is_published=True,
+                                     body=[{"start_ms": 0, "end_ms": 1000, "text": "Hi."}])
+        self.client.get("/api/dictations/?page_size=1")  # sessiya/kesh isitiladi
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as small:
+            self.client.get("/api/dictations/?page_size=1")
+        with CaptureQueriesContext(connection) as big:
+            self.client.get("/api/dictations/?page_size=7")
+        self.assertEqual(len(small), len(big))

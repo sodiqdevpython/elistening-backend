@@ -1,6 +1,7 @@
 """Diktantlar uchun API."""
 from django.db.models import Count, F
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.permissions import IsAuthenticated
@@ -14,13 +15,32 @@ from .models import (
     ShortQuestionFeedback, ShortReport,
 )
 from .serializers import (
-    DictationDetailSerializer, DictationListSerializer,
+    DictationCompleteSerializer, DictationDetailSerializer, DictationListSerializer,
     DictationProgressWriteSerializer, DictationQuestionFeedbackWriteSerializer,
     DictationReportWriteSerializer,
     IeltsListeningTestDetailSerializer, IeltsListeningTestListSerializer,
     ShortListSerializer,
     ShortQuestionFeedbackWriteSerializer, ShortReportWriteSerializer,
 )
+
+
+def _progress_map(user, dictations) -> dict:
+    """Ro'yxat sahifasidagi darslar bo'yicha foydalanuvchi holati — BITTA so'rov."""
+    if not getattr(user, "is_authenticated", False) or not dictations:
+        return {}
+    rows = DictationProgress.objects.filter(
+        user=user, dictation_id__in=[d.pk for d in dictations],
+    ).values("dictation_id", "percent", "completions", "best_accuracy", "completed_at")
+    return {
+        r["dictation_id"]: {
+            "percent": r["percent"],
+            "completed": r["completions"] > 0,
+            "completions": r["completions"],
+            "best_accuracy": r["best_accuracy"],
+            "completed_at": r["completed_at"],
+        }
+        for r in rows
+    }
 
 
 class DictationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -123,6 +143,51 @@ class DictationViewSet(viewsets.ReadOnlyModelViewSet):
     def get_serializer_class(self):
         return DictationDetailSerializer if self.action == "retrieve" else DictationListSerializer
 
+    def list(self, request, *args, **kwargs):
+        """Ro'yxat + kirgan foydalanuvchining shu sahifadagi darslar bo'yicha
+        holati (`my_progress`: ✓ tugatilgan, eng yaxshi natija, joriy foiz).
+
+        Ro'yxat keshlanmaydi (CLAUDE.md → "Ataylab keshlanmaydigan joylar"),
+        shu bois shaxsiy maydon xavfsiz. Qo'shimcha narx — sahifaga BITTA so'rov.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        items = list(page if page is not None else queryset)
+        context = self.get_serializer_context()
+        context["my_progress"] = _progress_map(request.user, items)
+        data = self.get_serializer(items, many=True, context=context).data
+        return self.get_paginated_response(data) if page is not None else Response(data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated],
+            url_path="complete")
+    def complete(self, request, slug=None):
+        """Diktant oxirigacha yozildi → natija saqlanadi, joriy urinish tozalanadi.
+
+        Body: `{"accuracy": 0..100, "active_seconds": N}`. Baholash mijozda,
+        shu bois aniqlikni mijoz yuboradi. Bu faqat foydalanuvchining O'Z
+        statistikasi — reyting vaqti boshqa yo'ldan (`add-time`) keladi.
+        """
+        dictation = self.get_object()
+        payload = DictationCompleteSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        accuracy = payload.validated_data["accuracy"]
+
+        entry, _ = DictationProgress.objects.get_or_create(user=request.user, dictation=dictation)
+        entry.completions += 1
+        entry.completed_at = timezone.now()
+        entry.last_accuracy = accuracy
+        entry.best_accuracy = max(entry.best_accuracy or 0, accuracy)
+        entry.last_active_seconds = payload.validated_data["active_seconds"]
+        # Urinish tugadi — keyingi kirishda "Davom ettirish" emas, "Qayta
+        # ishlash" chiqsin. `percent=100` ro'yxatdagi progress chizig'i uchun.
+        entry.percent = 100
+        entry.last_index = 0
+        entry.draft_answers = {}
+        entry.first_try = {}
+        entry.active_seconds = 0
+        entry.save()
+        return Response(DictationProgressWriteSerializer(entry).data)
+
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         # `views` ni oshirib qo'yamiz — race'siz atomic update.
@@ -141,8 +206,8 @@ class DictationViewSet(viewsets.ReadOnlyModelViewSet):
         dictation = self.get_object()
         if request.method == "GET":
             entry = DictationProgress.objects.filter(user=request.user, dictation=dictation).first()
-            if not entry:
-                return Response({"percent": 0, "last_index": 0, "draft_answers": {}})
+            # Yozuv yo'q bo'lsa ham bir xil shakl (barcha maydon — default qiymat).
+            entry = entry or DictationProgress(user=request.user, dictation=dictation)
             return Response(DictationProgressWriteSerializer(entry).data)
 
         # POST — upsert
