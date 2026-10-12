@@ -122,14 +122,35 @@ class FeedParamsTests(TestCase):
             title="YouTube video", type=Dictation.Type.SHORT_STORY, body=body,
             is_published=True, is_media=True,
             youtube_link="https://www.youtube.com/watch?v=abc12345678",
+            mcq_questions=[{"q": "?", "answer": "A"}],
         )
         # `is_media` bor, lekin havola bo'sh — bu ham chiqmasligi kerak.
         Dictation.objects.create(
             title="Media bayrogi bor, havola yo'q", type=Dictation.Type.SHORT_STORY,
             body=body, is_published=True, is_media=True, youtube_link="",
+            mcq_questions=[{"q": "?", "answer": "A"}],
         )
         ids = [r["id"] for r in self.client.get("/api/dictations/?media=1").json()["results"]]
         self.assertEqual(ids, [with_video.id])
+
+    def test_media_filter_hides_videos_without_questions(self):
+        """Mobilda faqat listening test bor — savolsiz video (masalan
+        dailydictation importi) u yerda bo'sh sahifa, ko'rinmasligi kerak.
+        Istalgan BITTA tur savol bo'lsa yetadi. Saytda esa hammasi qoladi."""
+        body = [{"start_ms": 0, "end_ms": 1000, "text": "Hi."}]
+        video = {"type": Dictation.Type.SHORT_STORY, "body": body, "is_published": True,
+                 "is_media": True, "youtube_link": "https://www.youtube.com/watch?v=abc12345678"}
+        empty = Dictation.objects.create(title="Savolsiz", source_url="https://x/1", **video)
+        q = [{"q": "?", "answer": "x"}]
+        kept = [
+            Dictation.objects.create(title="MCQ", mcq_questions=q, **video),
+            Dictation.objects.create(title="TFNG", tfng_questions=q, **video),
+            Dictation.objects.create(title="Fill", fill_gap_questions=q, **video),
+        ]
+        ids = {r["id"] for r in self.client.get("/api/dictations/?media=1").json()["results"]}
+        self.assertEqual(ids, {d.id for d in kept})
+        site = {r["id"] for r in self.client.get("/api/dictations/?page_size=50").json()["results"]}
+        self.assertIn(empty.id, site)
 
     def test_without_media_flag_everything_is_listed(self):
         """Bayroqsiz — eski xulq (sayt shunga tayanadi)."""

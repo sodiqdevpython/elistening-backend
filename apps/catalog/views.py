@@ -53,7 +53,7 @@ class DictationViewSet(viewsets.ReadOnlyModelViewSet):
         ?page=1&page_size=20       — sahifalash
         ?exclude=1,2,3             — bu id'larni tashlab ketish (ko'rilganlar)
         ?random=1                  — tasodifiy tartib (aks holda eng yangisi)
-        ?media=1                   — FAQAT YouTube videosi borlari (mobil ilova)
+        ?media=1                   — FAQAT YouTube videosi va savollari borlari (mobil ilova)
         ?exclude_type=news         — bu turlarni CHIQARIB tashlaydi (vergul bilan)
 
     Detail endpoint slug **yoki id** bilan qidiradi — `/dictations/booking-a-room/`
@@ -112,13 +112,17 @@ class DictationViewSet(viewsets.ReadOnlyModelViewSet):
             if kinds:
                 qs = qs.exclude(type__in=kinds)
 
-        # `?media=1` — faqat YouTube videosi bor diktantlar.
+        # `?media=1` — faqat YouTube videosi VA savollari bor diktantlar.
         #
-        # Mobil ilovada FAQAT YouTube kontenti bo'ladi (diktant mashqi u yerda
-        # yo'q), shu bois u har so'rovda shu bayroqni yuboradi. Sayt esa
-        # bayroqsiz so'raydi va hamma diktantni ko'radi — eski xulq buzilmaydi.
+        # Mobil ilovada FAQAT YouTube kontenti va listening test bo'ladi
+        # (diktant mashqi u yerda yo'q), shu bois u har so'rovda shu bayroqni
+        # yuboradi. Savolsiz video mobilda bo'sh sahifa — dailydictation'dan
+        # import qilinganlar aynan shunday (body bor, savol yo'q). `exclude`
+        # uchala ro'yxat HAM bo'sh bo'lganini chiqaradi — bittasi bo'lsa yetadi.
+        # Sayt esa bayroqsiz so'raydi va hamma diktantni ko'radi — eski xulq.
         if self.request.query_params.get("media") == "1":
-            qs = qs.filter(is_media=True).exclude(youtube_link="")
+            qs = (qs.filter(is_media=True).exclude(youtube_link="")
+                  .exclude(mcq_questions=[], tfng_questions=[], fill_gap_questions=[]))
 
         # `?exclude=1,2,3` — chaqiruvchi allaqachon ko'rsatgan id'lar.
         # Mobil ilovadagi aralash lenta (shorts + videolar) shu bilan
