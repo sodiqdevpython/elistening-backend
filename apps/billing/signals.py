@@ -140,8 +140,9 @@ def log_and_notify(sender, instance: Subscription, created: bool, **kwargs):
     if not telegram_id:
         return
 
-    lang = "en" if (getattr(user, "language", "") or "uz").lower() == "en" else "uz"
-    text = _build_text(event, lang)
+    from apps.telegrambot.lang import bot_lang
+
+    text = _build_text(event, bot_lang(user))
 
     def _queue():
         # Import shu yerda — ilovalar yuklanish tartibiga bog'liq bo'lmasin.

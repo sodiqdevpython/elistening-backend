@@ -186,9 +186,14 @@ def _notify_inviter(invitation: Invitation) -> None:
     # `escape` majburiy — aks holda `<` bo'lgan ismda xabar umuman ketmaydi.
     raw_name = invitation.invitee.display_name or invitation.invitee.username or "yangi foydalanuvchi"
     name = escape(raw_name)
-    lang = (inviter.language or "uz").lower()
+    from apps.billing.models import Plan
+    from apps.telegrambot.lang import bot_lang
+
+    lang = bot_lang(inviter)
     left = progress["next_reward_left"]
-    plan = (progress["next_reward_plan"] or "").upper()
+    code = progress["next_reward_plan"] or ""
+    # "O'rta" / "Yuqori" — butun tizimdagi nom (inglizcha PLUS/PRO emas).
+    plan = Plan.STATUS_NAMES.get(code, code) if lang == "uz" else code.upper()
 
     if lang == "en":
         text = (
@@ -203,7 +208,7 @@ def _notify_inviter(invitation: Invitation) -> None:
             f"Jami taklif qilganingiz: {progress['invited_total']}"
         )
         if left:
-            text += f"\nYana {left} ta — va 1 oylik {plan} sovg'a bo'ladi."
+            text += f"\nYana {left} ta — va 1 oylik «{plan}» tarif sovg'a bo'ladi."
 
     _queue_message(inviter, text)
     Invitation.objects.filter(pk=invitation.pk).update(notified=True)

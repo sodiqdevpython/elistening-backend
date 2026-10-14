@@ -74,7 +74,10 @@ PROVIDER_LABEL = {
 
 # ── Yordamchilar ──────────────────────────────────────────────────────────
 def user_lang(user) -> str:
-    return "en" if (getattr(user, "language", "") or "").lower() == "en" else "uz"
+    """Bot xabari tili — doim o'zbekcha (`apps/telegrambot/lang.py`)."""
+    from apps.telegrambot.lang import bot_lang
+
+    return bot_lang(user)
 
 
 def money(uzs: int, lang: str = "uz") -> str:

@@ -97,12 +97,15 @@ class PlanUpgradeNotifyTests(TestCase):
         self.commit(lambda: Subscription.objects.create(user=self.user, plan=self.pro, expires_at=None))
         self.assertIn("muddatsiz", self.messages().first().text)
 
-    def test_english_user_gets_english_text(self):
+    def test_bot_is_uzbek_even_for_english_site_users(self):
+        """Bot TO'LIQ o'zbekcha (`telegrambot/lang.py`) — sayt tili inglizcha
+        bo'lsa ham. Ilgari bitta chatda ikki til aralashib ketardi."""
         en_user = User.objects.create(username="u3", telegram_id=777, language="en")
         self.commit(lambda: Subscription.objects.create(user=en_user, plan=self.plus, expires_at=None))
         text = self.messages(en_user).first().text
-        self.assertIn("Congratulations", text)
-        self.assertIn("unlimited", text)
+        self.assertIn("Tabriklaymiz", text)
+        self.assertIn("muddatsiz", text)
+        self.assertNotIn("Congratulations", text)
 
     def test_cancelled_subscription_is_silent(self):
         self.commit(lambda: Subscription.objects.create(
@@ -151,7 +154,8 @@ class LimitNotifyTests(TestCase):
         self.assertEqual(messages.count(), 1)
         text = messages.first().text
         self.assertIn("/profile/billing", text)
-        self.assertIn("Bepul", text)
+        # Tarif nomi butun botdagi kabi — Oddiy / O'rta / Yuqori (`status_name`).
+        self.assertIn("Oddiy", text)
         # Bot HTML rejimida yuboradi — markdown yulduzchalari bo'lmasin.
         self.assertNotIn("*", text)
 

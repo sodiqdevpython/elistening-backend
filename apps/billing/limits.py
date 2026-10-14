@@ -185,11 +185,15 @@ def notify_limit_once(user) -> None:
         # qiymatlarni escape qilamiz (`<` bo'lsa Telegram xabarni rad etadi).
         from html import escape
 
-        plan_name = escape(
-            (plan.name_en if (user.language or "uz") == "en" else plan.name_uz) if plan else "Free"
-        )
+        from apps.telegrambot.lang import bot_lang
+
+        lang = bot_lang(user)
+        if plan is None:
+            plan_name = "Oddiy" if lang == "uz" else "Free"
+        else:
+            plan_name = escape(plan.status_name if lang == "uz" else plan.name_en)
         link = f"{site}/profile/billing"
-        if (getattr(user, "language", "") or "uz").lower() == "en":
+        if lang == "en":
             text = "\n".join([
                 f"Unfortunately you have reached today's limit on the <b>{plan_name}</b> plan.",
                 "It resets tomorrow — or remove the limits completely by upgrading:",

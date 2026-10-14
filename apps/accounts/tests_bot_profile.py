@@ -45,12 +45,13 @@ class BotProfileTests(TestCase):
         data = [b["data"] for b in self.buttons(profile_view(self.user))]
         self.assertEqual(data, ["sl", "pb", "invite"])
 
-    def test_free_plan_and_english(self):
+    def test_free_plan_and_uzbek_even_for_english_site_user(self):
         self.user.language = "en"
         self.user.save(update_fields=["language"])
         text = profile_view(self.user)["text"]
-        self.assertIn("Payment ID: <code>931716835</code>", text)
-        self.assertIn("(free)", text)
+        self.assertIn("To‘lov ID: <code>931716835</code>", text)
+        self.assertIn("(bepul)", text)
+        self.assertNotIn("Payment ID", text)
 
     def test_sessions_list_and_revoke_one(self):
         web = ActiveSession.objects.create(user=self.user, platform="web", sid="a", device=UA_CHROME)

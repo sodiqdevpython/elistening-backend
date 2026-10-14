@@ -60,8 +60,9 @@ def notify_deposit(entry: WalletTransaction) -> None:
         return
     from .offer import deposit_fallback_text
 
-    lang = "en" if (getattr(user, "language", "") or "").lower() == "en" else "uz"
-    text = deposit_fallback_text(entry, lang)
+    from apps.telegrambot.lang import bot_lang
+
+    text = deposit_fallback_text(entry, bot_lang(user))
 
     def _queue():
         from apps.telegrambot.models import BotMessage

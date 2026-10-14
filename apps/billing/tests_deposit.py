@@ -233,13 +233,15 @@ class OfferTests(TestCase):
         self.assertIn("tanlandi", done["text"])
         self.assertEqual(Wallet.objects.get(user=self.user).pending_plan, self.pro)
 
-    def test_english_user(self):
+    def test_english_site_user_still_gets_uzbek(self):
+        """Bot TO'LIQ o'zbekcha — rasm (kartochkalar) ham, matn ham."""
         User.objects.filter(pk=self.user.pk).update(language="en")
         self.user.refresh_from_db()
         entry = credit(self.user, 3_200_000, WalletTransaction.Provider.PAYNET, notify=False)
         data = offer.deposit_message(entry.pk)
-        self.assertIn("added to your balance", data["caption"])
-        self.assertEqual(data["offer"]["plans"][1]["features"][0], "30 Shorts per day")
+        self.assertIn("Hisobingizga", data["caption"])
+        self.assertEqual(data["offer"]["lang"], "uz")
+        self.assertEqual(data["offer"]["plans"][1]["features"][0], "Kuniga 30 ta Shorts")
 
 
 class WalletHistoryApiTests(TestCase):
