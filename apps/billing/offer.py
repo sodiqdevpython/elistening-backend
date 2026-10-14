@@ -40,8 +40,8 @@ PLAN_COPY = {
     "free": {
         "tagline": {"uz": "Bepul — sinab ko‘rish uchun", "en": "Free — to get started"},
         "features": {
-            "uz": ["Kuniga 8 ta Shorts", "Kuniga 2 ta video", "Kuniga 20 ta diktant"],
-            "en": ["8 Shorts per day", "2 videos per day", "20 dictations per day"],
+            "uz": ["Kuniga 8 ta Shorts", "Kuniga 3 ta video", "Kuniga 5 ta diktant"],
+            "en": ["8 Shorts per day", "3 videos per day", "5 dictations per day"],
         },
     },
     "plus": {

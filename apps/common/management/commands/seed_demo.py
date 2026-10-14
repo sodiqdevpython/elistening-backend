@@ -23,9 +23,9 @@ from apps.catalog.models import Dictation
 #  shorts, video, dictation, ielts)  — limit: None = cheksiz, 0 = yo'q, N = kuniga
 PLANS = [
     ("free", "Oddiy", "Oddiy", 0, 0,
-     ["Kuniga 8 ta Shorts", "Kuniga 2 ta video", "Kuniga 20 ta diktant"],
-     ["8 Shorts per day", "2 videos per day", "20 dictations per day"],
-     True, 8, 2, 20, 0),
+     ["Kuniga 8 ta Shorts", "Kuniga 3 ta video", "Kuniga 5 ta diktant"],
+     ["8 Shorts per day", "3 videos per day", "5 dictations per day"],
+     True, 8, 3, 5, 0),
     ("plus", "O'rta", "O'rta", 23000, "2.30",
      ["Kuniga 30 ta Shorts", "Kuniga 10 ta video", "Cheksiz diktant",
       "Kuniga 2 ta IELTS test"],
