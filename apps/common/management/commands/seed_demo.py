@@ -23,18 +23,18 @@ from apps.catalog.models import Dictation
 #  shorts, video, dictation, ielts)  — limit: None = cheksiz, 0 = yo'q, N = kuniga
 PLANS = [
     ("free", "Oddiy", "Oddiy", 0, 0,
-     ["Kuniga 8 ta Shorts", "Kuniga 2 ta video", "Kuniga 2 ta diktant", "Reklama bilan"],
-     ["8 Shorts per day", "2 videos per day", "2 dictations per day", "Ads included"],
-     True, 8, 2, 2, 0),
+     ["Kuniga 8 ta Shorts", "Kuniga 2 ta video", "Kuniga 20 ta diktant"],
+     ["8 Shorts per day", "2 videos per day", "20 dictations per day"],
+     True, 8, 2, 20, 0),
     ("plus", "O'rta", "O'rta", 23000, "2.30",
      ["Kuniga 30 ta Shorts", "Kuniga 10 ta video", "Cheksiz diktant",
-      "Kuniga 2 ta IELTS test", "Reklamasiz"],
+      "Kuniga 2 ta IELTS test"],
      ["30 Shorts per day", "10 videos per day", "Unlimited dictation",
-      "2 IELTS tests per day", "No ads"],
+      "2 IELTS tests per day"],
      False, 30, 10, None, 2),
     ("pro", "Yuqori", "Yuqori", 32000, "3.20",
-     ["Cheksiz Shorts", "Cheksiz video", "Cheksiz diktant", "Cheksiz IELTS test", "Reklamasiz"],
-     ["Unlimited Shorts", "Unlimited videos", "Unlimited dictation", "Unlimited IELTS tests", "No ads"],
+     ["Cheksiz Shorts", "Cheksiz video", "Cheksiz diktant", "Cheksiz IELTS test"],
+     ["Unlimited Shorts", "Unlimited videos", "Unlimited dictation", "Unlimited IELTS tests"],
      False, None, None, None, None),
 ]
 

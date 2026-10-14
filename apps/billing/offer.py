@@ -40,8 +40,8 @@ PLAN_COPY = {
     "free": {
         "tagline": {"uz": "Bepul — sinab ko‘rish uchun", "en": "Free — to get started"},
         "features": {
-            "uz": ["Kuniga 8 ta Shorts", "Kuniga 2 ta video", "Kuniga 2 ta diktant", "Reklama bilan"],
-            "en": ["8 Shorts per day", "2 videos per day", "2 dictations per day", "Ads included"],
+            "uz": ["Kuniga 8 ta Shorts", "Kuniga 2 ta video", "Kuniga 20 ta diktant"],
+            "en": ["8 Shorts per day", "2 videos per day", "20 dictations per day"],
         },
     },
     "plus": {
@@ -49,17 +49,17 @@ PLAN_COPY = {
         "tagline": {"uz": "Faol o‘rganuvchilar uchun", "en": "For active learners"},
         "features": {
             "uz": ["Kuniga 30 ta Shorts", "Kuniga 10 ta video", "Cheksiz diktant",
-                   "Kuniga 2 ta IELTS test", "Reklamasiz"],
+                   "Kuniga 2 ta IELTS test"],
             "en": ["30 Shorts per day", "10 videos per day", "Unlimited dictation",
-                   "2 IELTS tests per day", "No ads"],
+                   "2 IELTS tests per day"],
         },
     },
     "pro": {
         "tagline": {"uz": "Cheksiz — hammasi ochiq", "en": "Unlimited — everything unlocked"},
         "features": {
-            "uz": ["Cheksiz Shorts", "Cheksiz video", "Cheksiz diktant", "Cheksiz IELTS test", "Reklamasiz"],
+            "uz": ["Cheksiz Shorts", "Cheksiz video", "Cheksiz diktant", "Cheksiz IELTS test"],
             "en": ["Unlimited Shorts", "Unlimited videos", "Unlimited dictation",
-                   "Unlimited IELTS tests", "No ads"],
+                   "Unlimited IELTS tests"],
         },
     },
 }
