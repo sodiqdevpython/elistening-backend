@@ -314,6 +314,10 @@ def my_invites(request):
         }
         for r in rewards
     ]
+    # Kimlarni QACHON taklif qilganim + meni kim taklif qilgan (`public.py`).
+    from .public import invite_lists
+
+    data.update(invite_lists(request, request.user))
     return Response(data)
 
 
@@ -424,26 +428,36 @@ def leaderboard(request):
     period = 30 if request.query_params.get("period") == "30" else 7
     since = timezone.localdate() - timezone.timedelta(days=period - 1)
 
-    cache_key = f"leaderboard_rows_{period}_{since.isoformat()}"
+    cache_key = f"leaderboard_rows_v2_{period}_{since.isoformat()}"
     data = cache.get(cache_key)
     if data is None:
         rows = (
             DailyActivity.objects.filter(date__gte=since, seconds__gt=0)
-            .values("user_id", "user__display_name", "user__username", "user__avatar")
+            .values("user_id", "user__display_name", "user__username", "user__avatar",
+                    "user__is_active")
             .annotate(total=Sum("seconds"))
             .order_by("-total")[:30]
         )
+        from .public import AUTO_USERNAME
+
         data = []
         for index, row in enumerate(rows, start=1):
-            name = row["user__display_name"] or row["user__username"]
+            # Avtomatik `tg<chat_id>` username Telegram ID (= To'lov ID) ni
+            # oshkor qilardi — ochiq joyda ko'rsatilmaydi (`public.py`).
+            username = row["user__username"] or ""
+            if AUTO_USERNAME.match(username):
+                username = ""
+            name = (row["user__display_name"] or "").strip() or username or "—"
             data.append({
                 "rank": index,
                 "user_id": row["user_id"],
                 "name": name,
-                "username": row["user__username"] or "",
+                "username": username,
                 "initial": (name or "?")[:1].upper(),
                 "hours": round(row["total"] / 3600, 1),
                 "seconds": row["total"],
+                # `public.visible_users()` bilan bir xil shart.
+                "has_profile": bool(row["user__is_active"] and (row["user__display_name"] or "").strip()),
                 # Keshda NISBIY yo'l saqlanadi ("avatars/x.jpg"). To'liq URL
                 # har so'rovda quriladi — aks holda kesh bitta host'ni
                 # yodda saqlab qolardi (LAN IP / domen aralashib ketardi).

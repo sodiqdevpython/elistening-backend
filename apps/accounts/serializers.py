@@ -249,6 +249,8 @@ class LeaderboardRowSerializer(serializers.Serializer):
     # 6 daqiqadan kam faollik "0" bo'lib qolardi.
     seconds = serializers.IntegerField(required=False, default=0)
     is_me = serializers.BooleanField()
+    # Ochiq profili bormi (`/u/<id>`) — ismsiz/faol bo'lmaganlarniki 404.
+    has_profile = serializers.BooleanField(required=False, default=False)
 
 
 class OtpVerifySerializer(serializers.Serializer):

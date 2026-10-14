@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.urls import reverse
 from django.utils.html import format_html
 
 from apps.common.admin import BaseModelAdmin
@@ -47,7 +48,7 @@ class UserAdmin(DjangoUserAdmin):
     list_filter = (DeletionRequestedFilter, "cefr_level", "language", "gender", "is_active", "is_staff", "date_joined")
     search_fields = ("username", "display_name", "telegram_username", "telegram_id", "email", "invite_code")
     ordering = ("-date_joined",)
-    readonly_fields = ("last_login", "date_joined", "invite_code", "total_hours")
+    readonly_fields = ("last_login", "date_joined", "invite_code", "total_hours", "invited_by_record")
     inlines = [DailyActivityInline]
     autocomplete_fields = ("invited_by",)
     list_select_related = True
@@ -64,7 +65,7 @@ class UserAdmin(DjangoUserAdmin):
                            "sanani bo'shatib saqlang (yoki user qayta login qilsa "
                            "o'zi bekor bo'ladi).",
         }),
-        ("Taklif", {"fields": ("invite_code", "invited_by")}),
+        ("Taklif", {"fields": ("invite_code", "invited_by_record", "invited_by")}),
         ("Ruxsatlar", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
         ("Sanalar", {"fields": ("last_login", "date_joined")}),
     )
@@ -86,6 +87,18 @@ class UserAdmin(DjangoUserAdmin):
     @admin.display(description="O'chirish so'rovi", boolean=True)
     def deletion_flag(self, obj):
         return obj.deletion_requested_at is not None
+
+    @admin.display(description="Kim taklif qilgan (hisobga olingan)")
+    def invited_by_record(self, obj):
+        """Haqiqat manbai — `Invitation` (taklif qilgan o'chsa ham nusxa qoladi)."""
+        record = Invitation.objects.select_related("inviter").filter(invitee=obj).first()
+        if record is None:
+            return "—"
+        when = record.created_at.strftime("%d.%m.%Y %H:%M")
+        if record.inviter is not None:
+            url = reverse("admin:accounts_user_change", args=[record.inviter.pk])
+            return format_html('<a href="{}">{}</a> · {}', url, record.inviter, when)
+        return f"{record.inviter_name or '—'} · id:{record.inviter_telegram_id or '—'} · {when} (akkaunt o'chirilgan)"
 
 
 @admin.register(DailyActivity)
@@ -143,13 +156,19 @@ class ActiveSessionAdmin(BaseModelAdmin):
 class InvitationAdmin(BaseModelAdmin):
     """Hisobga olingan takliflar. Faqat o'qish — sovg'a hisobi shunga tayanadi."""
 
-    list_display = ("inviter", "invitee", "source", "notified", "created_at")
+    list_display = ("inviter_col", "invitee", "source", "notified", "created_at")
     list_filter = ("source", "notified", "created_at")
-    search_fields = ("inviter__username", "inviter__display_name",
-                     "invitee__username", "invitee__display_name")
+    search_fields = ("inviter__username", "inviter__display_name", "inviter_name", "inviter_telegram_id",
+                     "invitee__username", "invitee__display_name", "invitee__telegram_id")
     autocomplete_fields = ("inviter", "invitee")
     list_select_related = ("inviter", "invitee")
-    readonly_fields = ("inviter", "invitee", "source", "notified", "created_at", "updated_at")
+    readonly_fields = ("inviter", "inviter_name", "inviter_telegram_id", "invitee", "source", "notified",
+                       "created_at", "updated_at")
+
+    @admin.display(description="Taklif qilgan", ordering="inviter")
+    def inviter_col(self, obj):
+        # Akkaunt o'chirilgan bo'lsa ham kimligi ko'rinsin (yozilgan paytdagi nusxa).
+        return obj.inviter or f"{obj.inviter_name or '—'} (o'chirilgan, id:{obj.inviter_telegram_id or '—'})"
 
     def has_add_permission(self, request):
         return False

@@ -354,6 +354,13 @@ class Invitation(TimeStampedModel):
     "taklif qilingan" bo'la oladi. Sovg'a hisobi shu jadvalga tayanadi, shu
     bois takrorlanish mumkin emasligi baza darajasida kafolatlanadi —
     kodda xato bo'lsa ham hech kim ikki marta sanalmaydi.
+
+    **Kim taklif qilgani DOIM topiladi** (foydalanuvchi talabi). Ilgari
+    `inviter` CASCADE edi: taklif qilgan akkauntini o'chirsa (profilda
+    "akkauntni o'chirish" so'rovi bor), uning hamma taklif yozuvlari ham
+    o'chib, "bu odamni kim olib kelgan" yo'qolardi. Endi `SET_NULL` +
+    yaratilgan paytdagi nusxa (`inviter_telegram_id`, `inviter_name`) —
+    akkaunt o'chsa ham yozuv va kimligi qoladi.
     """
 
     class Source(models.TextChoices):
@@ -361,8 +368,12 @@ class Invitation(TimeStampedModel):
         SETUP = "setup", "Ro'yxatdan o'tishda kod"
 
     inviter = models.ForeignKey(
-        User, verbose_name="Taklif qilgan", on_delete=models.CASCADE, related_name="sent_invites",
+        User, verbose_name="Taklif qilgan", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="sent_invites",
     )
+    #: Yozilgan paytdagi nusxa — taklif qilgan akkaunt o'chsa ham kimligi qoladi.
+    inviter_telegram_id = models.BigIntegerField("Taklif qilgan Telegram ID", null=True, blank=True)
+    inviter_name = models.CharField("Taklif qilgan ismi", max_length=160, blank=True)
     invitee = models.OneToOneField(
         User, verbose_name="Taklif qilingan", on_delete=models.CASCADE, related_name="invite_record",
     )
@@ -376,4 +387,4 @@ class Invitation(TimeStampedModel):
         indexes = [models.Index(fields=["inviter", "created_at"])]
 
     def __str__(self):
-        return f"{self.inviter} → {self.invitee}"
+        return f"{self.inviter or self.inviter_name or '—'} → {self.invitee}"

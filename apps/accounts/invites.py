@@ -136,6 +136,9 @@ def register_invitation(inviter: User, invitee: User, source: str) -> Invitation
         with transaction.atomic():
             invitation = Invitation.objects.create(
                 inviter=inviter, invitee=invitee, source=source,
+                # Nusxa: taklif qilgan akkaunt keyin o'chsa ham kimligi qolsin.
+                inviter_telegram_id=inviter.telegram_id,
+                inviter_name=(inviter.display_name or inviter.username or "")[:160],
             )
     except IntegrityError:
         return None  # poyga: boshqa so'rov ulgurdi

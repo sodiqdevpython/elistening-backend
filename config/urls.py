@@ -9,6 +9,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.accounts import session_views as account_session_views
 from apps.accounts import views as account_views
+from apps.accounts import public as account_public
 from apps.accounts.refresh import SessionTokenRefreshView
 from apps.billing import views as billing_views
 from apps.catalog import views as catalog_views
@@ -54,6 +55,8 @@ api_patterns = [
     path("me/vocab/<int:pk>/", vocab_views.my_vocab_item, name="me-vocab-item"),
     path("me/attempts/", legacy_views.categories_list, name="me-attempts"),
     path("leaderboard/", account_views.leaderboard, name="leaderboard"),
+    path("users/search/", account_public.user_search, name="user-search"),
+    path("users/<int:pk>/", account_public.user_profile, name="user-profile"),
 
     # Diktantlar (yangi asosiy API)
     path("dictations/types/", catalog_views.dictation_types, name="dictation-types"),
