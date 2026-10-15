@@ -415,55 +415,93 @@ def track_activity(request):
     })
 
 
+# Reyting sahifasi hajmi (mobil ilova `page` yubormaydi — birinchi sahifa).
+LEADERBOARD_PAGE_SIZE = 30
+# Ruxsat etilgan davrlar (kun): 1 = bugun, 0 = butun vaqt.
+LEADERBOARD_PERIODS = (1, 7, 30, 90, 0)
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def leaderboard(request):
-    """TOP 30 — so'nggi 7 yoki 30 kun bo'yicha faol vaqt.
+    """Reyting — so'nggi 7 yoki 30 kun bo'yicha faol vaqt, HAMMA foydalanuvchi, sahifalab.
 
     OG'IR aggregatsiya (barcha DailyActivity yig'indisi) foydalanuvchiga
     bog'liq EMAS — 60s keshlanadi. `is_me` faqat keshlangan ro'yxatga
     so'rovda qo'shiladi (arzon), shu bois javob har user uchun to'g'ri.
     """
     from django.core.cache import cache
-    period = 30 if request.query_params.get("period") == "30" else 7
-    since = timezone.localdate() - timezone.timedelta(days=period - 1)
+    # Davr: oxirgi N kun (1 = bugun) yoki 0 = butun vaqt. Noma'lum qiymat — 7
+    # (mobil ilova va eski mijozlar `period` ni 7/30 bilan yuboradi).
+    try:
+        period = int(request.query_params.get("period") or 7)
+    except ValueError:
+        period = 7
+    if period not in LEADERBOARD_PERIODS:
+        period = 7
+    since = timezone.localdate() - timezone.timedelta(days=period - 1) if period else None
 
-    cache_key = f"leaderboard_rows_v2_{period}_{since.isoformat()}"
-    data = cache.get(cache_key)
-    if data is None:
-        rows = (
-            DailyActivity.objects.filter(date__gte=since, seconds__gt=0)
-            .values("user_id", "user__display_name", "user__username", "user__avatar",
-                    "user__is_active")
-            .annotate(total=Sum("seconds"))
-            .order_by("-total")[:30]
-        )
+    # Sahifalash: HAMMA foydalanuvchi (ism qo'ygan yoki shu davrda tinglagan),
+    # eng ko'p tinglagan tepada. `page` siz so'rov — avvalgidek birinchi 30 ta
+    # (mobil ilova shunga tayanadi).
+    try:
+        page = max(1, int(request.query_params.get("page") or 1))
+    except ValueError:
+        page = 1
+
+    cache_key = f"leaderboard_v3_{period}_{since.isoformat() if since else 'all'}_{page}"
+    cached = cache.get(cache_key)
+    if cached is None:
+        from django.db.models import Q, Value
+        from django.db.models.functions import Coalesce
+
         from .public import AUTO_USERNAME
 
+        users = (
+            User.objects.filter(is_active=True)
+            .annotate(total=Coalesce(
+                Sum("daily_activity__seconds",
+                    filter=Q(daily_activity__date__gte=since) if since else None),
+                Value(0),
+            ))
+            .filter(Q(total__gt=0) | ~Q(display_name=""))
+            .order_by("-total", "pk")
+        )
+        count = users.count()
+        num_pages = max(1, -(-count // LEADERBOARD_PAGE_SIZE))
+        page = min(page, num_pages)
+        offset = (page - 1) * LEADERBOARD_PAGE_SIZE
+        rows = users.values("id", "display_name", "username", "avatar", "total")[
+            offset:offset + LEADERBOARD_PAGE_SIZE
+        ]
+
         data = []
-        for index, row in enumerate(rows, start=1):
+        for index, row in enumerate(rows, start=offset + 1):
             # Avtomatik `tg<chat_id>` username Telegram ID (= To'lov ID) ni
             # oshkor qilardi — ochiq joyda ko'rsatilmaydi (`public.py`).
-            username = row["user__username"] or ""
+            username = row["username"] or ""
             if AUTO_USERNAME.match(username):
                 username = ""
-            name = (row["user__display_name"] or "").strip() or username or "—"
+            display = (row["display_name"] or "").strip()
+            name = display or username or "—"
             data.append({
                 "rank": index,
-                "user_id": row["user_id"],
+                "user_id": row["id"],
                 "name": name,
                 "username": username,
                 "initial": (name or "?")[:1].upper(),
                 "hours": round(row["total"] / 3600, 1),
                 "seconds": row["total"],
-                # `public.visible_users()` bilan bir xil shart.
-                "has_profile": bool(row["user__is_active"] and (row["user__display_name"] or "").strip()),
+                # `public.visible_users()` bilan bir xil shart (faol + ism bor).
+                "has_profile": bool(display),
                 # Keshda NISBIY yo'l saqlanadi ("avatars/x.jpg"). To'liq URL
                 # har so'rovda quriladi — aks holda kesh bitta host'ni
                 # yodda saqlab qolardi (LAN IP / domen aralashib ketardi).
-                "avatar": row["user__avatar"] or "",
+                "avatar": row["avatar"] or "",
             })
-        cache.set(cache_key, data, 60)
+        cached = {"count": count, "page": page, "num_pages": num_pages, "rows": data}
+        cache.set(cache_key, cached, 60)
+    data = cached["rows"]
 
     from django.conf import settings
     me_id = request.user.id if request.user.is_authenticated else None
@@ -487,11 +525,16 @@ def leaderboard(request):
     my_hours = 0.0
     my_seconds = 0
     if me_id:
-        my_seconds = request.user.seconds_in_period(period)
+        my_seconds = (request.user.seconds_in_period(period) if period
+                      else request.user.total_seconds)
         my_hours = round(my_seconds / 3600, 1)
 
     return Response({
         "period": period,
+        "count": cached["count"],
+        "page": cached["page"],
+        "num_pages": cached["num_pages"],
+        "page_size": LEADERBOARD_PAGE_SIZE,
         "my_hours": my_hours,
         "my_seconds": my_seconds,
         "results": LeaderboardRowSerializer(data, many=True).data,

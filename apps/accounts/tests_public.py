@@ -130,3 +130,38 @@ class LeaderboardPrivacyTests(TestCase):
         row = self.client.get("/api/leaderboard/").json()["results"][0]
         self.assertTrue(row["has_profile"])
         self.assertEqual(self.client.get(f"/api/users/{row['user_id']}/").status_code, 200)
+
+
+class LeaderboardPaginationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        today = timezone.localdate()
+        # 35 ta ismli foydalanuvchi: i-chisi i*10 soniya tinglagan (0 — umuman yo'q).
+        for i in range(35):
+            u = make(500 + i, f"User {i:02d}")
+            if i:
+                DailyActivity.objects.create(user=u, date=today, seconds=i * 10)
+        make(600, "")  # ismsiz va vaqtsiz — ro'yxatda yo'q
+
+    def test_everyone_listed_most_active_first_with_pages(self):
+        first = self.client.get("/api/leaderboard/").json()
+        self.assertEqual((first["count"], first["num_pages"], first["page"]), (35, 2, 1))
+        self.assertEqual(len(first["results"]), 30)
+        self.assertEqual(first["results"][0]["name"], "User 34")
+        second = self.client.get("/api/leaderboard/", {"page": 2}).json()
+        self.assertEqual([r["rank"] for r in second["results"]], list(range(31, 36)))
+        # Hali tinglamagan (0 s) foydalanuvchi ham bor — eng oxirida.
+        self.assertEqual((second["results"][-1]["name"], second["results"][-1]["seconds"]), ("User 00", 0))
+
+    def test_page_out_of_range_clamps(self):
+        data = self.client.get("/api/leaderboard/", {"page": 99}).json()
+        self.assertEqual(data["page"], 2)
+
+    def test_period_filter_today_and_all_time(self):
+        old = User.objects.get(telegram_id=500)  # "User 00" — bugun 0 s
+        DailyActivity.objects.create(user=old, date=timezone.localdate() - timedelta(days=100), seconds=99999)
+        today = self.client.get("/api/leaderboard/", {"period": 1}).json()
+        self.assertEqual((today["period"], today["results"][0]["name"]), (1, "User 34"))
+        all_time = self.client.get("/api/leaderboard/", {"period": 0}).json()
+        self.assertEqual((all_time["period"], all_time["results"][0]["name"]), (0, "User 00"))
+        self.assertEqual(self.client.get("/api/leaderboard/", {"period": 13}).json()["period"], 7)
